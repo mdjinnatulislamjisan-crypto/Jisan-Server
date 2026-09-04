@@ -5,14 +5,31 @@ const path = require('path');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const Mailjet = require('node-mailjet');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
-const mailjet = Mailjet.apiConnect(process.env.MAILJET_API_KEY, process.env.MAILJET_SECRET_KEY);
+// ---------- MongoDB connection ----------
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('MongoDB connected'))
+  .catch(err => console.error('MongoDB connection error:', err.message));
 
+const userSchema = new mongoose.Schema({
+  username: { type: String, unique: true, required: true },
+  email: { type: String, unique: true, required: true },
+  password: { type: String, required: true },
+  securityQuestion: String,
+  securityAnswer: String,
+  verified: { type: Boolean, default: false },
+  verifyToken: String
+});
+const User = mongoose.model('User', userSchema);
+
+// ---------- Mailjet ----------
+const mailjet = Mailjet.apiConnect(process.env.MAILJET_API_KEY, process.env.MAILJET_SECRET_KEY);
 async function sendEmail(toEmail, subject, html) {
   return mailjet.post('send', { version: 'v3.1' }).request({
     Messages: [{
@@ -24,13 +41,9 @@ async function sendEmail(toEmail, subject, html) {
   });
 }
 
+// ---------- File storage dir (local, still ephemeral on Render) ----------
 const DATA_DIR = path.join(__dirname, 'my-files');
-const USERS_FILE = path.join(__dirname, 'users.json');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
-if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, '[]');
-
-function getUsers() { return JSON.parse(fs.readFileSync(USERS_FILE)); }
-function saveUsers(users) { fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2)); }
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -315,53 +328,63 @@ app.get('/register', (req, res) => {
 });
 
 app.post('/register', async (req, res) => {
-  const { username, email, password, securityQuestion, securityAnswer } = req.body;
-  const clean = (username || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-  const cleanEmail = (email || '').trim().toLowerCase();
-  if (!clean || !cleanEmail || !password || !securityQuestion || !securityAnswer) {
-    return res.send('All fields are required. <a href="/register">Back</a>');
-  }
-  const users = getUsers();
-  if (users.find(u => u.username === clean)) return res.send('Username already taken. <a href="/register">Back</a>');
-  if (users.find(u => u.email === cleanEmail)) return res.send('Email already registered. <a href="/register">Back</a>');
-
-  const hash = await bcrypt.hash(password, 10);
-  const answerHash = await bcrypt.hash(securityAnswer.trim().toLowerCase(), 10);
-  const verifyToken = crypto.randomBytes(24).toString('hex');
-
-  users.push({ username: clean, email: cleanEmail, password: hash, securityQuestion: securityQuestion.trim(), securityAnswer: answerHash, verified: false, verifyToken });
-  saveUsers(users);
-  userDir(clean);
-
-  const verifyLink = `${BASE_URL}/verify-email?token=${verifyToken}`;
   try {
-    await sendEmail(
-      cleanEmail,
-      'Verify your Jisan Server account',
-      `<p>Hi ${clean},</p><p>Click below to verify your account:</p><p><a href="${verifyLink}">${verifyLink}</a></p>`
-    );
-  } catch (err) {
-    console.error('Email send failed:', err.message);
-    return res.send(`Account created, but the verification email failed to send (${err.message}). <a href="/resend-verification">Try resending</a> | <a href="/login">Go to login</a>`);
-  }
+    const { username, email, password, securityQuestion, securityAnswer } = req.body;
+    const clean = (username || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    const cleanEmail = (email || '').trim().toLowerCase();
+    if (!clean || !cleanEmail || !password || !securityQuestion || !securityAnswer) {
+      return res.send('All fields are required. <a href="/register">Back</a>');
+    }
 
-  res.send(authPage('Check your email', `
-    <h1>Verify your email</h1>
-    <p>We sent a verification link to <strong>${cleanEmail}</strong>.</p>
-    <p class="hint-text">📩 Not seeing it? Check your Spam / Junk folder — verification emails sometimes land there.</p>
-    <p><a href="/login">Back to login</a></p>
-  `));
+    const existingUsername = await User.findOne({ username: clean });
+    if (existingUsername) return res.send('Username already taken. <a href="/register">Back</a>');
+    const existingEmail = await User.findOne({ email: cleanEmail });
+    if (existingEmail) return res.send('Email already registered. <a href="/register">Back</a>');
+
+    const hash = await bcrypt.hash(password, 10);
+    const answerHash = await bcrypt.hash(securityAnswer.trim().toLowerCase(), 10);
+    const verifyToken = crypto.randomBytes(24).toString('hex');
+
+    const newUser = new User({
+      username: clean, email: cleanEmail, password: hash,
+      securityQuestion: securityQuestion.trim(), securityAnswer: answerHash,
+      verified: false, verifyToken
+    });
+    await newUser.save();
+    userDir(clean);
+
+    const verifyLink = `${BASE_URL}/verify-email?token=${verifyToken}`;
+    try {
+      await sendEmail(
+        cleanEmail,
+        'Verify your Jisan Server account',
+        `<p>Hi ${clean},</p><p>Click below to verify your account:</p><p><a href="${verifyLink}">${verifyLink}</a></p>`
+      );
+    } catch (err) {
+      console.error('Email send failed:', err.message);
+      return res.send(`Account created, but the verification email failed to send (${err.message}). <a href="/resend-verification">Try resending</a> | <a href="/login">Go to login</a>`);
+    }
+
+    res.send(authPage('Check your email', `
+      <h1>Verify your email</h1>
+      <p>We sent a verification link to <strong>${cleanEmail}</strong>.</p>
+      <p class="hint-text">📩 Not seeing it? Check your Spam / Junk folder.</p>
+      <p><a href="/login">Back to login</a></p>
+    `));
+  } catch (err) {
+    console.error('Register error:', err.message);
+    res.send('Something went wrong during registration. <a href="/register">Try again</a>');
+  }
 });
 
 // ---------- Email verification ----------
-app.get('/verify-email', (req, res) => {
+app.get('/verify-email', async (req, res) => {
   const { token } = req.query;
-  const users = getUsers();
-  const user = users.find(u => u.verifyToken === token);
+  const user = await User.findOne({ verifyToken: token });
   if (!user) return res.send('Invalid or expired verification link. <a href="/login">Back to login</a>');
   user.verified = true;
-  delete user.verifyToken;
-  saveUsers(users);
+  user.verifyToken = undefined;
+  await user.save();
   res.send(authPage('Verified', `<h1>Email verified!</h1><p>Your account is now active.</p><p><a href="/login">Log in now</a></p>`));
 });
 
@@ -380,14 +403,13 @@ app.get('/resend-verification', (req, res) => {
 
 app.post('/resend-verification', async (req, res) => {
   const clean = (req.body.username || '').trim().toLowerCase();
-  const users = getUsers();
-  const user = users.find(u => u.username === clean);
+  const user = await User.findOne({ username: clean });
   if (!user) return res.send('No account found with that username. <a href="/resend-verification">Try again</a>');
   if (user.verified) return res.send('This account is already verified. <a href="/login">Log in</a>');
 
   const newToken = crypto.randomBytes(24).toString('hex');
   user.verifyToken = newToken;
-  saveUsers(users);
+  await user.save();
 
   const verifyLink = `${BASE_URL}/verify-email?token=${newToken}`;
   try {
@@ -425,8 +447,7 @@ app.get('/login', (req, res) => {
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   const clean = (username || '').trim().toLowerCase();
-  const users = getUsers();
-  const user = users.find(u => u.username === clean);
+  const user = await User.findOne({ username: clean });
   if (!user) return res.send('Wrong username or password. <a href="/login">Try again</a>');
   const match = await bcrypt.compare(password, user.password);
   if (!match) return res.send('Wrong username or password. <a href="/login">Try again</a>');
@@ -449,10 +470,9 @@ app.get('/forgot-password', (req, res) => {
   `));
 });
 
-app.get('/forgot-password/question', (req, res) => {
+app.get('/forgot-password/question', async (req, res) => {
   const clean = (req.query.username || '').trim().toLowerCase();
-  const users = getUsers();
-  const user = users.find(u => u.username === clean);
+  const user = await User.findOne({ username: clean });
   if (!user) return res.send('No account found. <a href="/forgot-password">Try again</a>');
   res.send(authPage('Security Question', `
     <h1>Security Question</h1>
@@ -473,14 +493,13 @@ app.get('/forgot-password/question', (req, res) => {
 app.post('/forgot-password/reset', async (req, res) => {
   const { username, answer, newPassword } = req.body;
   const clean = (username || '').trim().toLowerCase();
-  const users = getUsers();
-  const user = users.find(u => u.username === clean);
+  const user = await User.findOne({ username: clean });
   if (!user) return res.send('Account not found. <a href="/forgot-password">Try again</a>');
   const correct = await bcrypt.compare((answer || '').trim().toLowerCase(), user.securityAnswer);
   if (!correct) return res.send('Incorrect answer. <a href="/forgot-password">Try again</a>');
   if (!newPassword || newPassword.length < 3) return res.send('Password too short. <a href="/forgot-password">Try again</a>');
   user.password = await bcrypt.hash(newPassword, 10);
-  saveUsers(users);
+  await user.save();
   res.send('Password reset successfully! <a href="/login">Log in now</a>');
 });
 
@@ -625,11 +644,10 @@ app.get('/folder/:folder', requireLogin, (req, res) => {
 });
 
 // ---------- Advanced settings ----------
-app.get('/settings', requireLogin, (req, res) => {
+app.get('/settings', requireLogin, async (req, res) => {
   const username = req.session.username;
   const folders = getFolders(username);
-  const users = getUsers();
-  const user = users.find(u => u.username === username);
+  const user = await User.findOne({ username });
 
   const main = `
     <div class="breadcrumb">Home / Settings</div>
