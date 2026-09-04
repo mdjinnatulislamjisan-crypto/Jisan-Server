@@ -11,26 +11,26 @@ const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
 async function sendMail({ to, subject, html }) {
-    const auth = Buffer.from(`${process.env.MAILJET_API_KEY}:${process.env.MAILJET_API_SECRET}`).toString('base64');
-    const res = await fetch('https://api.mailjet.com/v3.1/send', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Basic ${auth}`
-        },
-        body: JSON.stringify({
-            Messages: [{
-                From: { Email: process.env.MAILJET_SENDER_EMAIL, Name: 'Jisan Server' },
-                To: [{ Email: to }],
-                Subject: subject,
-                HTMLPart: html
-            }]
-        })
-    });
-    if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Mailjet error (${res.status}): ${errText}`);
-    }
+  const auth = Buffer.from(`${process.env.MAILJET_API_KEY}:${process.env.MAILJET_API_SECRET}`).toString('base64');
+  const res = await fetch('https://api.mailjet.com/v3.1/send', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Basic ${auth}`
+    },
+    body: JSON.stringify({
+      Messages: [{
+        From: { Email: process.env.MAILJET_SENDER_EMAIL, Name: 'Jisan Server' },
+        To: [{ Email: to }],
+        Subject: subject,
+        HTMLPart: html
+      }]
+    })
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Mailjet error (${res.status}): ${errText}`);
+  }
 }
 const DATA_DIR = path.join(__dirname, 'my-files');
 const USERS_FILE = path.join(__dirname, 'users.json');
@@ -42,33 +42,33 @@ function saveUsers(users) { fs.writeFileSync(USERS_FILE, JSON.stringify(users, n
 
 app.use(express.urlencoded({ extended: true }));
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'change-this-to-something-random-and-long',
-    resave: false,
-    saveUninitialized: false
+  secret: process.env.SESSION_SECRET || 'change-this-to-something-random-and-long',
+  resave: false,
+  saveUninitialized: false
 }));
 
 // ---------- Design helpers ----------
 const ACCENTS = ['#7c3aed', '#e11d48', '#0ea5e9', '#f59e0b', '#10b981', '#ec4899', '#6366f1'];
 function accentFor(name) {
-    let h = 0;
-    for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return ACCENTS[h % ACCENTS.length];
+  let h = 0;
+  for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return ACCENTS[h % ACCENTS.length];
 }
 function greeting() {
-    const hour = new Date().getHours();
-    if (hour < 5) return 'Still up,';
-    if (hour < 12) return 'Good morning,';
-    if (hour < 17) return 'Good afternoon,';
-    if (hour < 21) return 'Good evening,';
-    return 'Working late,';
+  const hour = new Date().getHours();
+  if (hour < 5) return 'Still up,';
+  if (hour < 12) return 'Good morning,';
+  if (hour < 17) return 'Good afternoon,';
+  if (hour < 21) return 'Good evening,';
+  return 'Working late,';
 }
 function initials(name) {
-    return String(name).charAt(0).toUpperCase();
+  return String(name).charAt(0).toUpperCase();
 }
 
 // ---------- Auth-page wrapper ----------
 function authPage(title, body) {
-    return `<!DOCTYPE html>
+  return `<!DOCTYPE html>
   <html><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${title} | Vault</title>
   ${fontsLink()}
@@ -117,13 +117,13 @@ function authPage(title, body) {
 
 // ---------- App-shell wrapper (file manager dashboard) ----------
 function appPage(title, username, activeFolder, folders, mainContent) {
-    const sidebarLinks = folders.map(f => `
+  const sidebarLinks = folders.map(f => `
     <a href="/folder/${encodeURIComponent(f)}" class="side-link ${activeFolder === f ? 'active' : ''}">
       <span class="side-dot" style="background:${accentFor(f)}"></span>
       <span class="side-label">${f}</span>
     </a>`).join('');
 
-    return `<!DOCTYPE html>
+  return `<!DOCTYPE html>
   <html><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${title} | Vault</title>
   ${fontsLink()}
@@ -215,17 +215,17 @@ function appPage(title, username, activeFolder, folders, mainContent) {
 }
 
 function fontsLink() {
-    return `<link rel="preconnect" href="https://fonts.googleapis.com">
+  return `<link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">`;
 }
 
 function meshBackground() {
-    return `<div class="mesh"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div></div>`;
+  return `<div class="mesh"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div></div>`;
 }
 
 function sharedStyles() {
-    return `
+  return `
     * { box-sizing: border-box; }
     html, body { margin:0; min-height:100%; font-family:'Inter', Arial, sans-serif; color:#f1f5f9; overflow-x:hidden; }
     body {
@@ -284,7 +284,7 @@ function sharedStyles() {
 }
 
 function clientScript() {
-    return `<script>
+  return `<script>
     function togglePassword(id) {
       const input = document.getElementById(id);
       const btn = document.getElementById(id + '-eye');
@@ -303,22 +303,22 @@ function clientScript() {
 
 // ---------- Auth helpers ----------
 function requireLogin(req, res, next) {
-    if (!req.session.username) return res.redirect('/login');
-    next();
+  if (!req.session.username) return res.redirect('/login');
+  next();
 }
 function userDir(username) {
-    const dir = path.join(DATA_DIR, username);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    return dir;
+  const dir = path.join(DATA_DIR, username);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }
 function getFolders(username) {
-    const dir = userDir(username);
-    return fs.readdirSync(dir).filter(f => fs.statSync(path.join(dir, f)).isDirectory());
+  const dir = userDir(username);
+  return fs.readdirSync(dir).filter(f => fs.statSync(path.join(dir, f)).isDirectory());
 }
 
 // ---------- Register ----------
 app.get('/register', (req, res) => {
-    res.send(authPage('Register', `
+  res.send(authPage('Register', `
     <div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div>
     <h1>Create your account</h1>
     <form method="post" action="/register">
@@ -337,37 +337,37 @@ app.get('/register', (req, res) => {
 });
 
 app.post('/register', async (req, res) => {
-    const { username, email, password, securityQuestion, securityAnswer } = req.body;
-    const clean = (username || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    const cleanEmail = (email || '').trim().toLowerCase();
-    if (!clean || !cleanEmail || !password || !securityQuestion || !securityAnswer) {
-        return res.send('All fields are required. <a href="/register">Back</a>');
-    }
-    const users = getUsers();
-    if (users.find(u => u.username === clean)) return res.send('Username already taken. <a href="/register">Back</a>');
-    if (users.find(u => u.email === cleanEmail)) return res.send('Email already registered. <a href="/register">Back</a>');
+  const { username, email, password, securityQuestion, securityAnswer } = req.body;
+  const clean = (username || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!clean || !cleanEmail || !password || !securityQuestion || !securityAnswer) {
+    return res.send('All fields are required. <a href="/register">Back</a>');
+  }
+  const users = getUsers();
+  if (users.find(u => u.username === clean)) return res.send('Username already taken. <a href="/register">Back</a>');
+  if (users.find(u => u.email === cleanEmail)) return res.send('Email already registered. <a href="/register">Back</a>');
 
-    const hash = await bcrypt.hash(password, 10);
-    const answerHash = await bcrypt.hash(securityAnswer.trim().toLowerCase(), 10);
-    const verifyToken = crypto.randomBytes(24).toString('hex');
+  const hash = await bcrypt.hash(password, 10);
+  const answerHash = await bcrypt.hash(securityAnswer.trim().toLowerCase(), 10);
+  const verifyToken = crypto.randomBytes(24).toString('hex');
 
-    users.push({ username: clean, email: cleanEmail, password: hash, securityQuestion: securityQuestion.trim(), securityAnswer: answerHash, verified: false, verifyToken });
-    saveUsers(users);
-    userDir(clean);
+  users.push({ username: clean, email: cleanEmail, password: hash, securityQuestion: securityQuestion.trim(), securityAnswer: answerHash, verified: false, verifyToken });
+  saveUsers(users);
+  userDir(clean);
 
-    const verifyLink = `${BASE_URL}/verify-email?token=${verifyToken}`;
-    try {
-        await sendMail({
-            to: cleanEmail,
-            subject: 'Verify your Vault account',
-            html: `<p>Hi ${clean},</p><p>Click below to verify your account:</p><p><a href="${verifyLink}">${verifyLink}</a></p>`
-        });
-    } catch (err) {
-        console.error('Email send failed:', err.message);
-        return res.send(`Account created, but the verification email failed to send (${err.message}). <a href="/resend-verification">Try resending</a> | <a href="/login">Go to login</a>`);
-    }
+  const verifyLink = `${BASE_URL}/verify-email?token=${verifyToken}`;
+  try {
+    await sendMail({
+      to: cleanEmail,
+      subject: 'Verify your Vault account',
+      html: `<p>Hi ${clean},</p><p>Click below to verify your account:</p><p><a href="${verifyLink}">${verifyLink}</a></p>`
+    });
+  } catch (err) {
+    console.error('Email send failed:', err.message);
+    return res.send(`Account created, but the verification email failed to send (${err.message}). <a href="/resend-verification">Try resending</a> | <a href="/login">Go to login</a>`);
+  }
 
-    res.send(authPage('Check your email', `
+  res.send(authPage('Check your email', `
     <div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div>
     <h1>Verify your email</h1>
     <p>We sent a verification link to <strong>${cleanEmail}</strong>. Click it before logging in.</p>
@@ -377,19 +377,19 @@ app.post('/register', async (req, res) => {
 
 // ---------- Email verification ----------
 app.get('/verify-email', (req, res) => {
-    const { token } = req.query;
-    const users = getUsers();
-    const user = users.find(u => u.verifyToken === token);
-    if (!user) return res.send('Invalid or expired verification link. <a href="/login">Back to login</a>');
-    user.verified = true;
-    delete user.verifyToken;
-    saveUsers(users);
-    res.send(authPage('Verified', `<div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div><h1>Email verified!</h1><p>Your account is now active.</p><p><a href="/login">Log in now</a></p>`));
+  const { token } = req.query;
+  const users = getUsers();
+  const user = users.find(u => u.verifyToken === token);
+  if (!user) return res.send('Invalid or expired verification link. <a href="/login">Back to login</a>');
+  user.verified = true;
+  delete user.verifyToken;
+  saveUsers(users);
+  res.send(authPage('Verified', `<div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div><h1>Email verified!</h1><p>Your account is now active.</p><p><a href="/login">Log in now</a></p>`));
 });
 
 // ---------- Resend verification ----------
 app.get('/resend-verification', (req, res) => {
-    res.send(authPage('Resend Verification', `
+  res.send(authPage('Resend Verification', `
     <div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div>
     <h1>Resend verification email</h1>
     <form method="post" action="/resend-verification">
@@ -401,34 +401,34 @@ app.get('/resend-verification', (req, res) => {
 });
 
 app.post('/resend-verification', async (req, res) => {
-    const clean = (req.body.username || '').trim().toLowerCase();
-    const users = getUsers();
-    const user = users.find(u => u.username === clean);
-    if (!user) return res.send('No account found with that username. <a href="/resend-verification">Try again</a>');
-    if (user.verified) return res.send('This account is already verified. <a href="/login">Log in</a>');
+  const clean = (req.body.username || '').trim().toLowerCase();
+  const users = getUsers();
+  const user = users.find(u => u.username === clean);
+  if (!user) return res.send('No account found with that username. <a href="/resend-verification">Try again</a>');
+  if (user.verified) return res.send('This account is already verified. <a href="/login">Log in</a>');
 
-    const newToken = crypto.randomBytes(24).toString('hex');
-    user.verifyToken = newToken;
-    saveUsers(users);
+  const newToken = crypto.randomBytes(24).toString('hex');
+  user.verifyToken = newToken;
+  saveUsers(users);
 
-    const verifyLink = `${BASE_URL}/verify-email?token=${newToken}`;
-    try {
-        await sendMail({
-            to: user.email,
-            subject: 'Verify your Vault account (resent)',
-            html: `<p>Hi ${user.username},</p><p>Here's your verification link again:</p><p><a href="${verifyLink}">${verifyLink}</a></p>`
-        });
-    } catch (err) {
-        console.error('Resend email failed:', err.message);
-        return res.send(`Failed to resend email: ${err.message} <a href="/resend-verification">Try again</a>`);
-    }
+  const verifyLink = `${BASE_URL}/verify-email?token=${newToken}`;
+  try {
+    await sendMail({
+      to: user.email,
+      subject: 'Verify your Vault account (resent)',
+      html: `<p>Hi ${user.username},</p><p>Here's your verification link again:</p><p><a href="${verifyLink}">${verifyLink}</a></p>`
+    });
+  } catch (err) {
+    console.error('Resend email failed:', err.message);
+    return res.send(`Failed to resend email: ${err.message} <a href="/resend-verification">Try again</a>`);
+  }
 
-    res.send(authPage('Email resent', `<div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div><h1>Verification email resent!</h1><p>Check <strong>${user.email}</strong>.</p><p><a href="/login">Back to login</a></p>`));
+  res.send(authPage('Email resent', `<div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div><h1>Verification email resent!</h1><p>Check <strong>${user.email}</strong>.</p><p><a href="/login">Back to login</a></p>`));
 });
 
 // ---------- Login / Logout ----------
 app.get('/login', (req, res) => {
-    res.send(authPage('Login', `
+  res.send(authPage('Login', `
     <div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div>
     <h1>Log in to Vault</h1>
     <form method="post" action="/login">
@@ -446,23 +446,23 @@ app.get('/login', (req, res) => {
 });
 
 app.post('/login', async (req, res) => {
-    const { username, password } = req.body;
-    const clean = (username || '').trim().toLowerCase();
-    const users = getUsers();
-    const user = users.find(u => u.username === clean);
-    if (!user) return res.send('Wrong username or password. <a href="/login">Try again</a>');
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.send('Wrong username or password. <a href="/login">Try again</a>');
-    if (!user.verified) return res.send('Please verify your email before logging in. <a href="/resend-verification">Resend email</a>');
-    req.session.username = clean;
-    res.redirect('/');
+  const { username, password } = req.body;
+  const clean = (username || '').trim().toLowerCase();
+  const users = getUsers();
+  const user = users.find(u => u.username === clean);
+  if (!user) return res.send('Wrong username or password. <a href="/login">Try again</a>');
+  const match = await bcrypt.compare(password, user.password);
+  if (!match) return res.send('Wrong username or password. <a href="/login">Try again</a>');
+  if (!user.verified) return res.send('Please verify your email before logging in. <a href="/resend-verification">Resend email</a>');
+  req.session.username = clean;
+  res.redirect('/');
 });
 
 app.get('/logout', (req, res) => { req.session.destroy(() => res.redirect('/login')); });
 
 // ---------- Forgot password ----------
 app.get('/forgot-password', (req, res) => {
-    res.send(authPage('Forgot Password', `
+  res.send(authPage('Forgot Password', `
     <div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div>
     <h1>Reset your password</h1>
     <form method="get" action="/forgot-password/question">
@@ -474,11 +474,11 @@ app.get('/forgot-password', (req, res) => {
 });
 
 app.get('/forgot-password/question', (req, res) => {
-    const clean = (req.query.username || '').trim().toLowerCase();
-    const users = getUsers();
-    const user = users.find(u => u.username === clean);
-    if (!user) return res.send('No account found. <a href="/forgot-password">Try again</a>');
-    res.send(authPage('Security Question', `
+  const clean = (req.query.username || '').trim().toLowerCase();
+  const users = getUsers();
+  const user = users.find(u => u.username === clean);
+  if (!user) return res.send('No account found. <a href="/forgot-password">Try again</a>');
+  res.send(authPage('Security Question', `
     <div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div>
     <h1>Security Question</h1>
     <form method="post" action="/forgot-password/reset">
@@ -496,61 +496,61 @@ app.get('/forgot-password/question', (req, res) => {
 });
 
 app.post('/forgot-password/reset', async (req, res) => {
-    const { username, answer, newPassword } = req.body;
-    const clean = (username || '').trim().toLowerCase();
-    const users = getUsers();
-    const user = users.find(u => u.username === clean);
-    if (!user) return res.send('Account not found. <a href="/forgot-password">Try again</a>');
-    const correct = await bcrypt.compare((answer || '').trim().toLowerCase(), user.securityAnswer);
-    if (!correct) return res.send('Incorrect answer. <a href="/forgot-password">Try again</a>');
-    if (!newPassword || newPassword.length < 3) return res.send('Password too short. <a href="/forgot-password">Try again</a>');
-    user.password = await bcrypt.hash(newPassword, 10);
-    saveUsers(users);
-    res.send('Password reset successfully! <a href="/login">Log in now</a>');
+  const { username, answer, newPassword } = req.body;
+  const clean = (username || '').trim().toLowerCase();
+  const users = getUsers();
+  const user = users.find(u => u.username === clean);
+  if (!user) return res.send('Account not found. <a href="/forgot-password">Try again</a>');
+  const correct = await bcrypt.compare((answer || '').trim().toLowerCase(), user.securityAnswer);
+  if (!correct) return res.send('Incorrect answer. <a href="/forgot-password">Try again</a>');
+  if (!newPassword || newPassword.length < 3) return res.send('Password too short. <a href="/forgot-password">Try again</a>');
+  user.password = await bcrypt.hash(newPassword, 10);
+  saveUsers(users);
+  res.send('Password reset successfully! <a href="/login">Log in now</a>');
 });
 
 // ---------- File storage ----------
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const folder = (req.body.folder || 'general').replace(/[^a-zA-Z0-9_-]/g, '');
-        const dest = path.join(userDir(req.session.username), folder);
-        if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
-        cb(null, dest);
-    },
-    filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+  destination: (req, file, cb) => {
+    const folder = (req.body.folder || 'general').replace(/[^a-zA-Z0-9_-]/g, '');
+    const dest = path.join(userDir(req.session.username), folder);
+    if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+    cb(null, dest);
+  },
+  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
 });
 const upload = multer({ storage });
 
 function fileCardHtml(folder, f) {
-    const ext = path.extname(f).toLowerCase();
-    const url = `/files/${folder}/${encodeURIComponent(f)}`;
-    let preview = '';
-    let accent = '#0ea5e9';
-    if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) { preview = `<img src="${url}" class="thumb" />`; accent = '#7c3aed'; }
-    else if (['.mp4', '.webm', '.mov'].includes(ext)) { preview = `<video src="${url}" class="thumb" controls></video>`; accent = '#e11d48'; }
-    else if (ext === '.pdf') { preview = `<embed src="${url}" class="thumb" type="application/pdf" />`; accent = '#f59e0b'; }
-    else { preview = `<div class="filetype">${ext.replace('.', '').toUpperCase() || 'FILE'}</div>`; accent = '#10b981'; }
-    return `<div class="file-card" style="--accent:${accent}" data-name="${f.toLowerCase()}">${preview}<p class="filename">${f}</p><a href="${url}" download class="download-link">Download</a></div>`;
+  const ext = path.extname(f).toLowerCase();
+  const url = `/files/${folder}/${encodeURIComponent(f)}`;
+  let preview = '';
+  let accent = '#0ea5e9';
+  if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) { preview = `<img src="${url}" class="thumb" />`; accent = '#7c3aed'; }
+  else if (['.mp4', '.webm', '.mov'].includes(ext)) { preview = `<video src="${url}" class="thumb" controls></video>`; accent = '#e11d48'; }
+  else if (ext === '.pdf') { preview = `<embed src="${url}" class="thumb" type="application/pdf" />`; accent = '#f59e0b'; }
+  else { preview = `<div class="filetype">${ext.replace('.', '').toUpperCase() || 'FILE'}</div>`; accent = '#10b981'; }
+  return `<div class="file-card" style="--accent:${accent}" data-name="${f.toLowerCase()}">${preview}<p class="filename">${f}</p><a href="${url}" download class="download-link">Download</a></div>`;
 }
 
 // ---------- Dashboard ----------
 app.get('/', requireLogin, (req, res) => {
-    const username = req.session.username;
-    const folders = getFolders(username);
-    const folderOptions = folders.map(f => `<option value="${f}">${f}</option>`).join('');
-    const totalFiles = folders.reduce((n, f) => n + fs.readdirSync(path.join(userDir(username), f)).length, 0);
+  const username = req.session.username;
+  const folders = getFolders(username);
+  const folderOptions = folders.map(f => `<option value="${f}">${f}</option>`).join('');
+  const totalFiles = folders.reduce((n, f) => n + fs.readdirSync(path.join(userDir(username), f)).length, 0);
 
-    const folderCards = folders.map(f => {
-        const count = fs.readdirSync(path.join(userDir(username), f)).length;
-        return `
+  const folderCards = folders.map(f => {
+    const count = fs.readdirSync(path.join(userDir(username), f)).length;
+    return `
     <a href="/folder/${encodeURIComponent(f)}" class="folder-card" style="--accent:${accentFor(f)}" data-name="${f.toLowerCase()}">
       <div class="folder-icon">📁</div>
       <div class="folder-name">${f}</div>
       <div class="folder-meta">${count} file${count === 1 ? '' : 's'}</div>
     </a>`;
-    }).join('');
+  }).join('');
 
-    const main = `
+  const main = `
     <div class="breadcrumb">Home</div>
     <div class="page-head">
       <div>
@@ -579,36 +579,36 @@ app.get('/', requireLogin, (req, res) => {
     `}
   `;
 
-    res.send(appPage('Dashboard', username, null, folders, main));
+  res.send(appPage('Dashboard', username, null, folders, main));
 });
 
 app.post('/create-folder', requireLogin, (req, res) => {
-    const folder = (req.body.foldername || '').replace(/[^a-zA-Z0-9_-]/g, '');
-    if (!folder) return res.send('Invalid folder name. <a href="/">Back</a>');
-    fs.mkdirSync(path.join(userDir(req.session.username), folder), { recursive: true });
-    res.redirect('/');
+  const folder = (req.body.foldername || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!folder) return res.send('Invalid folder name. <a href="/">Back</a>');
+  fs.mkdirSync(path.join(userDir(req.session.username), folder), { recursive: true });
+  res.redirect('/');
 });
 
 app.post('/upload', requireLogin, upload.single('myfile'), (req, res) => {
-    const folder = (req.body.folder || 'general').replace(/[^a-zA-Z0-9_-]/g, '');
-    res.redirect(`/folder/${encodeURIComponent(folder)}`);
+  const folder = (req.body.folder || 'general').replace(/[^a-zA-Z0-9_-]/g, '');
+  res.redirect(`/folder/${encodeURIComponent(folder)}`);
 });
 
 // ---------- Folder view ----------
 app.get('/folder/:folder', requireLogin, (req, res) => {
-    const username = req.session.username;
-    const folders = getFolders(username);
-    const folder = req.params.folder;
-    const folderPath = path.join(userDir(username), folder);
+  const username = req.session.username;
+  const folders = getFolders(username);
+  const folder = req.params.folder;
+  const folderPath = path.join(userDir(username), folder);
 
-    if (!folders.includes(folder)) {
-        return res.send(appPage('Not found', username, null, folders, `<div class="empty-state"><div class="emoji">🚫</div><p>Folder not found.</p></div>`));
-    }
+  if (!folders.includes(folder)) {
+    return res.send(appPage('Not found', username, null, folders, `<div class="empty-state"><div class="emoji">🚫</div><p>Folder not found.</p></div>`));
+  }
 
-    const files = fs.readdirSync(folderPath);
-    const cards = files.map(f => fileCardHtml(folder, f)).join('');
+  const files = fs.readdirSync(folderPath);
+  const cards = files.map(f => fileCardHtml(folder, f)).join('');
 
-    const main = `
+  const main = `
     <div class="breadcrumb"><a href="/">Home</a> / ${folder}</div>
     <div class="page-head">
       <div>
@@ -629,17 +629,32 @@ app.get('/folder/:folder', requireLogin, (req, res) => {
     `}
   `;
 
-    res.send(appPage(folder, username, folder, folders, main));
+  res.send(appPage(folder, username, folder, folders, main));
 });
 
 app.get('/files/:folder/:filename', requireLogin, (req, res) => {
-    const base = userDir(req.session.username);
-    const filePath = path.join(base, req.params.folder, req.params.filename);
-    if (!filePath.startsWith(base)) return res.status(403).send('Forbidden');
-    if (!fs.existsSync(filePath)) return res.status(404).send('Not found');
-    res.sendFile(filePath);
+  const base = userDir(req.session.username);
+  const filePath = path.join(base, req.params.folder, req.params.filename);
+  if (!filePath.startsWith(base)) return res.status(403).send('Forbidden');
+  if (!fs.existsSync(filePath)) return res.status(404).send('Not found');
+  res.sendFile(filePath);
 });
+app.get('/admin/users', (req, res) => {
+  try {
+    const users = getUsers();
 
+    const safeUsers = users.map(user => ({
+      username: user.username,
+      email: user.email,
+      verified: user.verified
+    }));
+
+    res.json(safeUsers);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Could not read users.json');
+  }
+});
 app.listen(PORT, () => {
-    console.log(`Vault (Jisan Server) running at ${BASE_URL}`);
+  console.log(`Vault (Jisan Server) running at ${BASE_URL}`);
 });
