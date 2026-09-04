@@ -5,13 +5,31 @@ const path = require('path');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
-const { Resend } = require('resend');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+async function sendMail({ to, subject, html }) {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'api-key': process.env.BREVO_API_KEY
+        },
+        body: JSON.stringify({
+            sender: { name: 'Jisan Server', email: process.env.BREVO_SENDER_EMAIL },
+            to: [{ email: to }],
+            subject,
+            htmlContent: html
+        })
+    });
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Brevo error (${res.status}): ${errText}`);
+    }
+}
 
 const DATA_DIR = path.join(__dirname, 'my-files');
 const USERS_FILE = path.join(__dirname, 'users.json');
@@ -28,30 +46,69 @@ app.use(session({
     saveUninitialized: false
 }));
 
+// ---------- Design helpers ----------
+const ACCENTS = ['#7c3aed', '#e11d48', '#0ea5e9', '#f59e0b', '#10b981', '#ec4899', '#6366f1'];
+function accentFor(name) {
+    let h = 0;
+    for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return ACCENTS[h % ACCENTS.length];
+}
+function greeting() {
+    const hour = new Date().getHours();
+    if (hour < 5) return 'Still up,';
+    if (hour < 12) return 'Good morning,';
+    if (hour < 17) return 'Good afternoon,';
+    if (hour < 21) return 'Good evening,';
+    return 'Working late,';
+}
+function initials(name) {
+    return String(name).charAt(0).toUpperCase();
+}
+
 // ---------- Auth-page wrapper ----------
 function authPage(title, body) {
-    const icons = ['📚', '✏️', '📐', '🖊️', '🎓', '📖', '🧮', '📝', '🔬', '💡', '📁', '🖼️'];
-    const floating = icons.map((icon, i) => {
-        const left = (i * 8 + 2) % 96;
-        const duration = 16 + (i % 5) * 4;
-        const delay = i * 1.1;
-        const size = 20 + (i % 3) * 10;
-        return `<span class="study-icon" style="left:${left}%; animation-duration:${duration}s; animation-delay:-${delay}s; font-size:${size}px;">${icon}</span>`;
-    }).join('');
-
     return `<!DOCTYPE html>
   <html><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${title} | Jisan Server</title>
+  <title>${title} | Vault</title>
+  ${fontsLink()}
   <style>${sharedStyles()}
     body.auth { display:flex; justify-content:center; align-items:center; }
-    .auth-card { max-width: 420px; width: 100%; }
+    .auth-shell { position:relative; z-index:1; width:100%; max-width:920px; display:grid; grid-template-columns: 1.05fr 1fr; border-radius:24px; overflow:hidden; box-shadow: 0 40px 100px rgba(3,7,18,0.55); }
+    .auth-pitch {
+      background: linear-gradient(155deg, rgba(124,58,237,0.35), rgba(14,165,233,0.28) 55%, rgba(16,185,129,0.22));
+      backdrop-filter: blur(6px);
+      padding: 46px 40px; display:flex; flex-direction:column; justify-content:space-between;
+      border-right: 1px solid rgba(255,255,255,0.08);
+    }
+    .auth-pitch h2 { font-family:'Space Grotesk',sans-serif; font-size:28px; line-height:1.25; margin:18px 0 12px; color:#f8fafc; }
+    .auth-pitch p { color:#cbd5e1; font-size:14px; line-height:1.6; max-width:32ch; }
+    .pitch-stack { display:flex; flex-direction:column; gap:14px; margin-top:26px; }
+    .pitch-row { display:flex; align-items:center; gap:12px; font-size:13px; color:#e2e8f0; }
+    .pitch-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .auth-card { background: rgba(15,20,35,0.82); padding:44px 40px; }
+    @media (max-width: 760px) {
+      .auth-shell { grid-template-columns: 1fr; max-width:420px; }
+      .auth-pitch { display:none; }
+    }
   </style></head>
   <body class="auth">
-    <div class="study-bg">${floating}</div>
-    <div class="bg-orb orb1"></div><div class="bg-orb orb2"></div><div class="bg-orb orb3"></div>
-    <div class="card auth-card">
-      <div class="brand"><span class="brand-dot"></span><span class="brand-name">JISAN SERVER</span></div>
-      ${body}
+    ${meshBackground()}
+    <div class="auth-shell">
+      <div class="auth-pitch">
+        <div>
+          <div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div>
+          <h2>Your files, organized like they matter.</h2>
+          <p>A personal file space built for students: folders that make sense, previews that load instantly, nothing to configure.</p>
+        </div>
+        <div class="pitch-stack">
+          <div class="pitch-row"><span class="pitch-dot" style="background:#7c3aed"></span>Folder-first organization</div>
+          <div class="pitch-row"><span class="pitch-dot" style="background:#0ea5e9"></span>Instant image, video &amp; PDF previews</div>
+          <div class="pitch-row"><span class="pitch-dot" style="background:#10b981"></span>Signed in, secured, yours only</div>
+        </div>
+      </div>
+      <div class="card auth-card">
+        ${body}
+      </div>
     </div>
     ${clientScript()}
   </body></html>`;
@@ -61,72 +118,91 @@ function authPage(title, body) {
 function appPage(title, username, activeFolder, folders, mainContent) {
     const sidebarLinks = folders.map(f => `
     <a href="/folder/${encodeURIComponent(f)}" class="side-link ${activeFolder === f ? 'active' : ''}">
-      <span class="side-icon">📁</span> ${f}
+      <span class="side-dot" style="background:${accentFor(f)}"></span>
+      <span class="side-label">${f}</span>
     </a>`).join('');
 
     return `<!DOCTYPE html>
   <html><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${title} | Jisan Server</title>
+  <title>${title} | Vault</title>
+  ${fontsLink()}
   <style>${sharedStyles()}
     body.dash { display:block; padding:0; align-items:initial; justify-content:initial; }
     .shell { position:relative; z-index:1; display:flex; min-height:100vh; }
     .sidebar {
-      width: 260px; flex-shrink:0; background: rgba(15,23,42,0.75);
-      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-      border-right: 1px solid rgba(148,163,184,0.15); padding: 24px 18px;
-      display:flex; flex-direction:column; gap: 20px;
+      width: 264px; flex-shrink:0; background: rgba(13,17,30,0.78);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border-right: 1px solid rgba(255,255,255,0.07); padding: 26px 20px;
+      display:flex; flex-direction:column; gap: 22px;
     }
-    .sidebar .brand { margin-bottom: 4px; }
-    .side-nav { display:flex; flex-direction:column; gap:4px; }
+    .sidebar .brand { margin-bottom: 2px; }
+    .side-nav { display:flex; flex-direction:column; gap:3px; }
     .side-link {
-      display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:10px;
-      color:#cbd5e1; font-size:14px; text-decoration:none; transition:0.15s;
+      display:flex; align-items:center; gap:11px; padding:10px 12px; border-radius:11px;
+      color:#aab4c8; font-size:14px; text-decoration:none; transition:0.15s; font-weight:500;
     }
-    .side-link:hover { background: rgba(56,189,248,0.1); color:#e2e8f0; text-decoration:none; }
-    .side-link.active { background: linear-gradient(135deg, rgba(56,189,248,0.25), rgba(99,102,241,0.25)); color:#7dd3fc; font-weight:600; }
-    .side-icon { font-size:16px; }
-    .side-section-title { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:#64748b; margin: 10px 0 2px 4px; }
-    .user-chip { display:flex; align-items:center; gap:10px; padding:10px 12px; background:rgba(30,41,59,0.6); border-radius:12px; border:1px solid rgba(148,163,184,0.15); }
-    .avatar { width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,#38bdf8,#6366f1); display:flex; align-items:center; justify-content:center; font-weight:700; color:#0f172a; }
-    .main { flex:1; padding: 28px 34px; min-width:0; }
-    .breadcrumb { font-size:13px; color:#94a3b8; margin-bottom:6px; }
-    .breadcrumb a { color:#38bdf8; }
-    .page-title { font-size:26px; font-weight:700; margin: 0 0 22px 0; color:#f1f5f9; }
-    .toolbar { display:flex; gap:12px; margin-bottom:24px; flex-wrap:wrap; align-items:center; }
+    .side-link:hover { background: rgba(255,255,255,0.06); color:#f1f5f9; text-decoration:none; }
+    .side-link.active { background: rgba(124,58,237,0.18); color:#e9d5ff; }
+    .side-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; box-shadow: 0 0 8px currentColor; }
+    .side-home { font-size:16px; }
+    .side-section-title { font-size:11px; text-transform:uppercase; letter-spacing:1.2px; color:#5b6478; margin: 4px 0 0 4px; font-weight:600; }
+    .user-chip { display:flex; align-items:center; gap:11px; padding:11px 12px; background:rgba(255,255,255,0.04); border-radius:14px; border:1px solid rgba(255,255,255,0.07); }
+    .avatar { width:36px; height:36px; border-radius:11px; background:linear-gradient(135deg,#7c3aed,#0ea5e9); display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; font-family:'Space Grotesk',sans-serif; flex-shrink:0; }
+    .stat-row { display:flex; gap:10px; }
+    .stat-chip { flex:1; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.07); border-radius:12px; padding:10px 12px; }
+    .stat-num { font-family:'Space Grotesk',sans-serif; font-size:19px; font-weight:700; color:#f1f5f9; line-height:1.1; }
+    .stat-label { font-size:10.5px; color:#7a869c; margin-top:2px; text-transform:uppercase; letter-spacing:0.6px; }
+    .main { flex:1; padding: 32px 40px; min-width:0; }
+    .breadcrumb { font-size:13px; color:#7a869c; margin-bottom:8px; }
+    .breadcrumb a { color:#7dd3fc; }
+    .page-head { display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-bottom:26px; }
+    .page-title { font-family:'Space Grotesk',sans-serif; font-size:28px; font-weight:700; margin: 0; color:#f8fafc; letter-spacing:-0.3px; }
+    .page-sub { font-size:13px; color:#7a869c; margin-top:4px; }
+    .search-box { position:relative; width:230px; }
+    .search-box input { margin:0; padding-left:36px; background:rgba(255,255,255,0.05); }
+    .search-box::before { content:'⌕'; position:absolute; left:13px; top:50%; transform:translateY(-50%); color:#7a869c; font-size:15px; }
+    .toolbar { display:flex; gap:12px; margin-bottom:28px; flex-wrap:wrap; align-items:center; }
     .toolbar form { display:flex; gap:8px; align-items:center; margin:0; }
     .toolbar input, .toolbar select { margin:0; width:auto; min-width:160px; }
-    .toolbar button { margin:0; width:auto; padding:10px 18px; }
-    .btn-ghost { background: rgba(51,65,85,0.6) !important; color:#e2e8f0 !important; border:1px solid rgba(148,163,184,0.25) !important; }
-    .empty-state { text-align:center; padding: 60px 20px; color:#64748b; }
-    .empty-state .emoji { font-size:42px; margin-bottom:10px; }
+    .toolbar button { margin:0; width:auto; padding:11px 20px; }
+    .btn-ghost { background: rgba(255,255,255,0.05) !important; color:#e2e8f0 !important; border:1px solid rgba(255,255,255,0.12) !important; }
+    .empty-state { text-align:center; padding: 70px 20px; color:#5b6478; border:1px dashed rgba(255,255,255,0.1); border-radius:18px; }
+    .empty-state .emoji { font-size:38px; margin-bottom:10px; }
+    .section-label { font-size:11px; text-transform:uppercase; letter-spacing:1.2px; color:#5b6478; font-weight:700; margin: 0 0 14px 0; }
     @media (max-width: 800px) {
       .shell { flex-direction:column; }
       .sidebar { width:100%; flex-direction:row; overflow-x:auto; align-items:center; }
       .side-nav { flex-direction:row; }
-      .main { padding: 20px; }
+      .stat-row { display:none; }
+      .main { padding: 22px; }
+      .search-box { width:100%; }
     }
   </style></head>
   <body class="dash">
-    <div class="bg-orb orb1"></div><div class="bg-orb orb2"></div><div class="bg-orb orb3"></div>
+    ${meshBackground()}
     <div class="shell">
       <aside class="sidebar">
-        <div class="brand"><span class="brand-dot"></span><span class="brand-name">JISAN SERVER</span></div>
+        <div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div>
         <div class="user-chip">
-          <div class="avatar">${username.charAt(0).toUpperCase()}</div>
-          <div>
-            <div style="font-size:13px; font-weight:600; color:#e2e8f0;">${username}</div>
-            <div style="font-size:11px; color:#64748b;"><a href="/logout">Log out</a></div>
+          <div class="avatar">${initials(username)}</div>
+          <div style="min-width:0;">
+            <div style="font-size:13px; font-weight:600; color:#e2e8f0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${username}</div>
+            <div style="font-size:11px; color:#7a869c;"><a href="/logout">Log out</a></div>
           </div>
+        </div>
+        <div class="stat-row">
+          <div class="stat-chip"><div class="stat-num">${folders.length}</div><div class="stat-label">Folders</div></div>
+          <div class="stat-chip"><div class="stat-num">${folders.reduce((n, f) => n + fs.readdirSync(path.join(userDir(username), f)).length, 0)}</div><div class="stat-label">Files</div></div>
         </div>
         <div>
           <div class="side-section-title">Overview</div>
           <div class="side-nav">
-            <a href="/" class="side-link ${!activeFolder ? 'active' : ''}"><span class="side-icon">🏠</span> Dashboard</a>
+            <a href="/" class="side-link ${!activeFolder ? 'active' : ''}"><span class="side-home">⌂</span> Dashboard</a>
           </div>
         </div>
-        <div>
+        <div style="flex:1; overflow-y:auto;">
           <div class="side-section-title">Your Folders</div>
-          <div class="side-nav">${sidebarLinks || '<span style="color:#475569; font-size:13px; padding:6px 12px;">No folders yet</span>'}</div>
+          <div class="side-nav">${sidebarLinks || '<span style="color:#5b6478; font-size:13px; padding:6px 12px;">No folders yet</span>'}</div>
         </div>
       </aside>
       <main class="main">
@@ -137,62 +213,72 @@ function appPage(title, username, activeFolder, folders, mainContent) {
   </body></html>`;
 }
 
+function fontsLink() {
+    return `<link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">`;
+}
+
+function meshBackground() {
+    return `<div class="mesh"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div></div>`;
+}
+
 function sharedStyles() {
     return `
     * { box-sizing: border-box; }
-    html, body { margin:0; min-height:100%; font-family:'Segoe UI', Roboto, Arial, sans-serif; color:#f1f5f9; overflow-x:hidden; }
+    html, body { margin:0; min-height:100%; font-family:'Inter', Arial, sans-serif; color:#f1f5f9; overflow-x:hidden; }
     body {
       position:relative; min-height:100vh; padding:40px 20px;
-      background: linear-gradient(-45deg, #0b1120, #1e1b4b, #0c4a6e, #1e293b, #3b0764);
-      background-size: 400% 400%; animation: gradientMove 22s ease infinite;
+      background:#080b14;
     }
-    @keyframes gradientMove { 0%{background-position:0% 50%;} 50%{background-position:100% 50%;} 100%{background-position:0% 50%;} }
-    .study-bg { position:fixed; top:0; left:0; width:100%; height:100%; overflow:hidden; z-index:0; pointer-events:none; }
-    .study-icon { position:absolute; top:110%; opacity:0.16; animation-name:floatUp; animation-timing-function:linear; animation-iteration-count:infinite; filter: drop-shadow(0 0 6px rgba(56,189,248,0.35)); }
-    @keyframes floatUp { 0%{transform:translateY(0) rotate(0deg); opacity:0;} 10%{opacity:0.16;} 90%{opacity:0.16;} 100%{transform:translateY(-130vh) rotate(25deg); opacity:0;} }
-    .bg-orb { position:fixed; border-radius:50%; filter:blur(70px); opacity:0.28; z-index:0; animation: floatOrb 14s ease-in-out infinite; }
-    .orb1 { width:360px; height:360px; background:#38bdf8; top:-80px; left:-80px; animation-duration:16s; }
-    .orb2 { width:300px; height:300px; background:#a855f7; bottom:-80px; right:-60px; animation-duration:18s; animation-delay:2s; }
-    .orb3 { width:220px; height:220px; background:#f472b6; top:45%; right:8%; animation-duration:22s; animation-delay:4s; }
-    @keyframes floatOrb { 0%,100%{transform:translateY(0) translateX(0);} 50%{transform:translateY(-30px) translateX(24px);} }
+    .mesh { position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none; }
+    .blob { position:absolute; border-radius:50%; filter:blur(90px); animation: drift 26s ease-in-out infinite; }
+    .b1 { width:520px; height:520px; background:#7c3aed; opacity:0.32; top:-160px; left:-120px; animation-duration:24s; }
+    .b2 { width:460px; height:460px; background:#0ea5e9; opacity:0.26; bottom:-140px; right:-100px; animation-duration:29s; animation-delay:2s; }
+    .b3 { width:380px; height:380px; background:#f59e0b; opacity:0.18; top:38%; right:12%; animation-duration:32s; animation-delay:5s; }
+    .b4 { width:320px; height:320px; background:#10b981; opacity:0.18; bottom:18%; left:8%; animation-duration:27s; animation-delay:8s; }
+    @keyframes drift { 0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(30px,-26px) scale(1.06);} }
     .card {
-      position:relative; z-index:1; background: rgba(30,41,59,0.68);
+      position:relative; z-index:1;
       backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
-      border-radius:20px; padding:34px 38px; box-shadow: 0 24px 70px rgba(0,0,0,0.55);
-      border:1px solid rgba(148,163,184,0.18);
+      box-shadow: 0 24px 70px rgba(0,0,0,0.5);
     }
-    .brand { display:flex; align-items:center; gap:10px; margin-bottom:18px; }
-    .brand-dot { width:12px; height:12px; border-radius:50%; background:#38bdf8; box-shadow:0 0 14px #38bdf8; }
-    .brand-name { font-weight:800; letter-spacing:0.8px; background:linear-gradient(90deg,#38bdf8,#a855f7); -webkit-background-clip:text; background-clip:text; color:transparent; font-size:16px; }
-    h1 { font-size:22px; margin-top:0; color:#e2e8f0; }
-    h3 { color:#93c5fd; margin-bottom:8px; }
-    a { color:#38bdf8; text-decoration:none; }
+    .brand { display:flex; align-items:center; gap:10px; margin-bottom:22px; }
+    .brand-mark { width:30px; height:30px; border-radius:9px; background:linear-gradient(135deg,#7c3aed,#0ea5e9); display:flex; align-items:center; justify-content:center; font-family:'Space Grotesk',sans-serif; font-weight:700; color:#fff; font-size:15px; flex-shrink:0; }
+    .brand-name { font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:1.5px; color:#f1f5f9; font-size:15px; }
+    h1 { font-family:'Space Grotesk',sans-serif; font-size:24px; margin-top:0; margin-bottom:6px; color:#f8fafc; font-weight:700; letter-spacing:-0.3px; }
+    h3 { color:#a5b4fc; margin-bottom:8px; font-size:14px; }
+    a { color:#7dd3fc; text-decoration:none; }
     a:hover { text-decoration:underline; }
     input, select, button {
       width:100%; padding:12px 14px; margin:6px 0 14px 0; border-radius:12px;
-      border:1px solid #334155; background: rgba(15,23,42,0.8); color:#f1f5f9; font-size:14px;
+      border:1px solid rgba(255,255,255,0.12); background: rgba(8,11,20,0.6); color:#f1f5f9; font-size:14px;
+      font-family:'Inter',sans-serif;
     }
-    input:focus, select:focus { outline:none; border-color:#38bdf8; box-shadow:0 0 0 3px rgba(56,189,248,0.15); }
+    input:focus, select:focus { outline:none; border-color:#7c3aed; box-shadow:0 0 0 3px rgba(124,58,237,0.18); }
     button {
-      background: linear-gradient(135deg, #38bdf8, #6366f1); color:#0b1120; font-weight:700;
-      border:none; cursor:pointer; transition:0.2s; letter-spacing:0.3px;
+      background: linear-gradient(135deg, #7c3aed, #0ea5e9); color:#fff; font-weight:700;
+      border:none; cursor:pointer; transition:0.2s; letter-spacing:0.2px;
     }
-    button:hover { filter:brightness(1.12); transform:translateY(-1px); }
-    .small-link { font-size:13px; color:#94a3b8; }
+    button:hover { filter:brightness(1.1); transform:translateY(-1px); }
+    .small-link { font-size:13px; color:#7a869c; }
     .pw-wrapper { position:relative; }
     .pw-wrapper input { padding-right:42px; }
-    .pw-toggle { position:absolute; right:10px; top:8px; cursor:pointer; background:none !important; border:none; width:auto; padding:0; margin:0; font-size:16px; color:#94a3b8; }
-    .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap:16px; }
-    .file-card { background: rgba(15,23,42,0.85); border:1px solid #334155; border-radius:14px; padding:10px; text-align:center; transition:0.2s; }
-    .file-card:hover { border-color:#38bdf8; transform: translateY(-3px); box-shadow: 0 10px 24px rgba(56,189,248,0.15); }
-    .thumb { width:100%; height:105px; object-fit:cover; border-radius:10px; background:#1e293b; }
-    .filetype { display:flex; align-items:center; justify-content:center; height:105px; color:#94a3b8; font-weight:700; font-size:13px; background:#1e293b; border-radius:10px; }
-    .filename { font-size:12px; color:#cbd5e1; margin:8px 0 4px 0; word-break:break-word; }
-    .download-link { font-size:12px; }
-    .folder-card { background: rgba(15,23,42,0.7); border:1px solid #334155; border-radius:16px; padding:20px; text-align:center; transition:0.2s; display:block; }
-    .folder-card:hover { border-color:#a855f7; transform: translateY(-3px); text-decoration:none; }
-    .folder-icon { font-size:34px; margin-bottom:8px; }
-    .folder-name { font-size:14px; color:#e2e8f0; font-weight:600; word-break:break-word; }
+    .pw-toggle { position:absolute; right:10px; top:8px; cursor:pointer; background:none !important; border:none; width:auto; padding:0; margin:0; font-size:16px; color:#7a869c; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap:16px; }
+    .file-card { position:relative; background: rgba(255,255,255,0.035); border:1px solid rgba(255,255,255,0.09); border-radius:15px; padding:12px; text-align:center; transition:0.2s; overflow:hidden; }
+    .file-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:var(--accent,#7c3aed); }
+    .file-card:hover { border-color:rgba(255,255,255,0.22); transform: translateY(-3px); box-shadow: 0 12px 28px rgba(0,0,0,0.35); }
+    .thumb { width:100%; height:105px; object-fit:cover; border-radius:9px; background:#11172a; }
+    .filetype { display:flex; align-items:center; justify-content:center; height:105px; color:#e2e8f0; font-weight:700; font-size:12.5px; letter-spacing:0.5px; background:rgba(255,255,255,0.05); border-radius:9px; }
+    .filename { font-size:12px; color:#cbd5e1; margin:9px 0 5px 0; word-break:break-word; }
+    .download-link { font-size:12px; font-weight:600; }
+    .folder-card { position:relative; background: rgba(255,255,255,0.035); border:1px solid rgba(255,255,255,0.09); border-radius:17px; padding:22px 18px; text-align:left; transition:0.2s; display:block; overflow:hidden; }
+    .folder-card::before { content:''; position:absolute; top:0; left:0; bottom:0; width:3px; background:var(--accent,#7c3aed); }
+    .folder-card:hover { border-color:rgba(255,255,255,0.22); transform: translateY(-3px); text-decoration:none; box-shadow: 0 14px 30px rgba(0,0,0,0.35); }
+    .folder-icon { width:38px; height:38px; border-radius:11px; background:var(--accent,#7c3aed); opacity:0.9; display:flex; align-items:center; justify-content:center; font-size:17px; margin-bottom:14px; }
+    .folder-name { font-size:14.5px; color:#f1f5f9; font-weight:600; word-break:break-word; }
+    .folder-meta { font-size:11.5px; color:#7a869c; margin-top:3px; }
   `;
 }
 
@@ -203,6 +289,13 @@ function clientScript() {
       const btn = document.getElementById(id + '-eye');
       if (input.type === 'password') { input.type='text'; btn.textContent='🙈'; }
       else { input.type='password'; btn.textContent='👁️'; }
+    }
+    function liveFilter(inputEl, selector) {
+      const q = inputEl.value.trim().toLowerCase();
+      document.querySelectorAll(selector).forEach(el => {
+        const name = (el.getAttribute('data-name') || '').toLowerCase();
+        el.style.display = name.includes(q) ? '' : 'none';
+      });
     }
   </script>`;
 }
@@ -225,6 +318,7 @@ function getFolders(username) {
 // ---------- Register ----------
 app.get('/register', (req, res) => {
     res.send(authPage('Register', `
+    <div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div>
     <h1>Create your account</h1>
     <form method="post" action="/register">
       <input name="username" placeholder="Choose a username" required />
@@ -237,7 +331,7 @@ app.get('/register', (req, res) => {
       <input name="securityAnswer" placeholder="Answer to your security question" required />
       <button type="submit">Create Account</button>
     </form>
-    <p>Already have an account? <a href="/login">Log in</a></p>
+    <p class="small-link">Already have an account? <a href="/login">Log in</a></p>
   `));
 });
 
@@ -262,10 +356,9 @@ app.post('/register', async (req, res) => {
 
     const verifyLink = `${BASE_URL}/verify-email?token=${verifyToken}`;
     try {
-        await resend.emails.send({
-            from: 'Jisan Server <onboarding@resend.dev>',
+        await sendMail({
             to: cleanEmail,
-            subject: 'Verify your Jisan Server account',
+            subject: 'Verify your Vault account',
             html: `<p>Hi ${clean},</p><p>Click below to verify your account:</p><p><a href="${verifyLink}">${verifyLink}</a></p>`
         });
     } catch (err) {
@@ -274,6 +367,7 @@ app.post('/register', async (req, res) => {
     }
 
     res.send(authPage('Check your email', `
+    <div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div>
     <h1>Verify your email</h1>
     <p>We sent a verification link to <strong>${cleanEmail}</strong>. Click it before logging in.</p>
     <p><a href="/login">Back to login</a></p>
@@ -289,12 +383,13 @@ app.get('/verify-email', (req, res) => {
     user.verified = true;
     delete user.verifyToken;
     saveUsers(users);
-    res.send(authPage('Verified', `<h1>Email verified!</h1><p>Your account is now active.</p><p><a href="/login">Log in now</a></p>`));
+    res.send(authPage('Verified', `<div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div><h1>Email verified!</h1><p>Your account is now active.</p><p><a href="/login">Log in now</a></p>`));
 });
 
 // ---------- Resend verification ----------
 app.get('/resend-verification', (req, res) => {
     res.send(authPage('Resend Verification', `
+    <div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div>
     <h1>Resend verification email</h1>
     <form method="post" action="/resend-verification">
       <input name="username" placeholder="Enter your username" required />
@@ -317,10 +412,9 @@ app.post('/resend-verification', async (req, res) => {
 
     const verifyLink = `${BASE_URL}/verify-email?token=${newToken}`;
     try {
-        await resend.emails.send({
-            from: 'Jisan Server <onboarding@resend.dev>',
+        await sendMail({
             to: user.email,
-            subject: 'Verify your Jisan Server account (resent)',
+            subject: 'Verify your Vault account (resent)',
             html: `<p>Hi ${user.username},</p><p>Here's your verification link again:</p><p><a href="${verifyLink}">${verifyLink}</a></p>`
         });
     } catch (err) {
@@ -328,13 +422,14 @@ app.post('/resend-verification', async (req, res) => {
         return res.send(`Failed to resend email: ${err.message} <a href="/resend-verification">Try again</a>`);
     }
 
-    res.send(authPage('Email resent', `<h1>Verification email resent!</h1><p>Check <strong>${user.email}</strong>.</p><p><a href="/login">Back to login</a></p>`));
+    res.send(authPage('Email resent', `<div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div><h1>Verification email resent!</h1><p>Check <strong>${user.email}</strong>.</p><p><a href="/login">Back to login</a></p>`));
 });
 
 // ---------- Login / Logout ----------
 app.get('/login', (req, res) => {
     res.send(authPage('Login', `
-    <h1>Log in to Jisan Server</h1>
+    <div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div>
+    <h1>Log in to Vault</h1>
     <form method="post" action="/login">
       <input name="username" placeholder="Username" required />
       <div class="pw-wrapper">
@@ -345,7 +440,7 @@ app.get('/login', (req, res) => {
     </form>
     <p class="small-link"><a href="/forgot-password">Forgot your password?</a></p>
     <p class="small-link"><a href="/resend-verification">Didn't get the verification email?</a></p>
-    <p>No account yet? <a href="/register">Register</a></p>
+    <p class="small-link">No account yet? <a href="/register">Register</a></p>
   `));
 });
 
@@ -367,6 +462,7 @@ app.get('/logout', (req, res) => { req.session.destroy(() => res.redirect('/logi
 // ---------- Forgot password ----------
 app.get('/forgot-password', (req, res) => {
     res.send(authPage('Forgot Password', `
+    <div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div>
     <h1>Reset your password</h1>
     <form method="get" action="/forgot-password/question">
       <input name="username" placeholder="Enter your username" required />
@@ -382,6 +478,7 @@ app.get('/forgot-password/question', (req, res) => {
     const user = users.find(u => u.username === clean);
     if (!user) return res.send('No account found. <a href="/forgot-password">Try again</a>');
     res.send(authPage('Security Question', `
+    <div class="brand"><span class="brand-mark">V</span><span class="brand-name">VAULT</span></div>
     <h1>Security Question</h1>
     <form method="post" action="/forgot-password/reset">
       <input type="hidden" name="username" value="${user.username}" />
@@ -427,11 +524,12 @@ function fileCardHtml(folder, f) {
     const ext = path.extname(f).toLowerCase();
     const url = `/files/${folder}/${encodeURIComponent(f)}`;
     let preview = '';
-    if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) preview = `<img src="${url}" class="thumb" />`;
-    else if (['.mp4', '.webm', '.mov'].includes(ext)) preview = `<video src="${url}" class="thumb" controls></video>`;
-    else if (ext === '.pdf') preview = `<embed src="${url}" class="thumb" type="application/pdf" />`;
-    else preview = `<div class="filetype">${ext.replace('.', '').toUpperCase() || 'FILE'}</div>`;
-    return `<div class="file-card">${preview}<p class="filename">${f}</p><a href="${url}" download class="download-link">Download</a></div>`;
+    let accent = '#0ea5e9';
+    if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) { preview = `<img src="${url}" class="thumb" />`; accent = '#7c3aed'; }
+    else if (['.mp4', '.webm', '.mov'].includes(ext)) { preview = `<video src="${url}" class="thumb" controls></video>`; accent = '#e11d48'; }
+    else if (ext === '.pdf') { preview = `<embed src="${url}" class="thumb" type="application/pdf" />`; accent = '#f59e0b'; }
+    else { preview = `<div class="filetype">${ext.replace('.', '').toUpperCase() || 'FILE'}</div>`; accent = '#10b981'; }
+    return `<div class="file-card" style="--accent:${accent}" data-name="${f.toLowerCase()}">${preview}<p class="filename">${f}</p><a href="${url}" download class="download-link">Download</a></div>`;
 }
 
 // ---------- Dashboard ----------
@@ -439,16 +537,27 @@ app.get('/', requireLogin, (req, res) => {
     const username = req.session.username;
     const folders = getFolders(username);
     const folderOptions = folders.map(f => `<option value="${f}">${f}</option>`).join('');
+    const totalFiles = folders.reduce((n, f) => n + fs.readdirSync(path.join(userDir(username), f)).length, 0);
 
-    const folderCards = folders.map(f => `
-    <a href="/folder/${encodeURIComponent(f)}" class="folder-card">
+    const folderCards = folders.map(f => {
+        const count = fs.readdirSync(path.join(userDir(username), f)).length;
+        return `
+    <a href="/folder/${encodeURIComponent(f)}" class="folder-card" style="--accent:${accentFor(f)}" data-name="${f.toLowerCase()}">
       <div class="folder-icon">📁</div>
       <div class="folder-name">${f}</div>
-    </a>`).join('');
+      <div class="folder-meta">${count} file${count === 1 ? '' : 's'}</div>
+    </a>`;
+    }).join('');
 
     const main = `
     <div class="breadcrumb">Home</div>
-    <h1 class="page-title">Welcome back, ${username}</h1>
+    <div class="page-head">
+      <div>
+        <h1 class="page-title">${greeting()} ${username}</h1>
+        <div class="page-sub">${folders.length} folder${folders.length === 1 ? '' : 's'} · ${totalFiles} file${totalFiles === 1 ? '' : 's'} total</div>
+      </div>
+      <div class="search-box"><input type="text" placeholder="Search folders..." oninput="liveFilter(this, '.folder-card')" /></div>
+    </div>
     <div class="toolbar">
       <form method="post" action="/create-folder">
         <input name="foldername" placeholder="New folder name" required />
@@ -463,7 +572,7 @@ app.get('/', requireLogin, (req, res) => {
         <button type="submit" class="btn-ghost">Upload File</button>
       </form>
     </div>
-    <h3>Your Folders</h3>
+    <p class="section-label">Your Folders</p>
     ${folders.length ? `<div class="grid">${folderCards}</div>` : `
       <div class="empty-state"><div class="emoji">📂</div><p>No folders yet — create one above to get started.</p></div>
     `}
@@ -500,7 +609,13 @@ app.get('/folder/:folder', requireLogin, (req, res) => {
 
     const main = `
     <div class="breadcrumb"><a href="/">Home</a> / ${folder}</div>
-    <h1 class="page-title">${folder}</h1>
+    <div class="page-head">
+      <div>
+        <h1 class="page-title">${folder}</h1>
+        <div class="page-sub">${files.length} file${files.length === 1 ? '' : 's'}</div>
+      </div>
+      <div class="search-box"><input type="text" placeholder="Search files..." oninput="liveFilter(this, '.file-card')" /></div>
+    </div>
     <div class="toolbar">
       <form method="post" action="/upload" enctype="multipart/form-data">
         <input type="hidden" name="folder" value="${folder}" />
@@ -525,5 +640,5 @@ app.get('/files/:folder/:filename', requireLogin, (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Jisan Server running at ${BASE_URL}`);
+    console.log(`Vault (Jisan Server) running at ${BASE_URL}`);
 });
