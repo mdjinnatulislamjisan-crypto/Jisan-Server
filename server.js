@@ -4,25 +4,14 @@ const fs = require('fs');
 const path = require('path');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
-const nodemailer = require('nodemailer');
 const crypto = require('crypto');
+const { Resend } = require('resend');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
-const GMAIL_USER = process.env.GMAIL_USER;
-const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
-
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false,
-  requireTLS: true,
-  auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
-  family: 4,
-  connectionTimeout: 10000
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const DATA_DIR = path.join(__dirname, 'my-files');
 const USERS_FILE = path.join(__dirname, 'users.json');
@@ -34,23 +23,23 @@ function saveUsers(users) { fs.writeFileSync(USERS_FILE, JSON.stringify(users, n
 
 app.use(express.urlencoded({ extended: true }));
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'change-this-to-something-random-and-long',
-  resave: false,
-  saveUninitialized: false
+    secret: process.env.SESSION_SECRET || 'change-this-to-something-random-and-long',
+    resave: false,
+    saveUninitialized: false
 }));
 
-// ---------- Auth-page wrapper (login/register/etc — centered card) ----------
+// ---------- Auth-page wrapper ----------
 function authPage(title, body) {
-  const icons = ['📚', '✏️', '📐', '🖊️', '🎓', '📖', '🧮', '📝', '🔬', '💡', '📁', '🖼️'];
-  const floating = icons.map((icon, i) => {
-    const left = (i * 8 + 2) % 96;
-    const duration = 16 + (i % 5) * 4;
-    const delay = i * 1.1;
-    const size = 20 + (i % 3) * 10;
-    return `<span class="study-icon" style="left:${left}%; animation-duration:${duration}s; animation-delay:-${delay}s; font-size:${size}px;">${icon}</span>`;
-  }).join('');
+    const icons = ['📚', '✏️', '📐', '🖊️', '🎓', '📖', '🧮', '📝', '🔬', '💡', '📁', '🖼️'];
+    const floating = icons.map((icon, i) => {
+        const left = (i * 8 + 2) % 96;
+        const duration = 16 + (i % 5) * 4;
+        const delay = i * 1.1;
+        const size = 20 + (i % 3) * 10;
+        return `<span class="study-icon" style="left:${left}%; animation-duration:${duration}s; animation-delay:-${delay}s; font-size:${size}px;">${icon}</span>`;
+    }).join('');
 
-  return `<!DOCTYPE html>
+    return `<!DOCTYPE html>
   <html><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${title} | Jisan Server</title>
   <style>${sharedStyles()}
@@ -68,14 +57,14 @@ function authPage(title, body) {
   </body></html>`;
 }
 
-// ---------- App-shell wrapper (sidebar dashboard, file manager) ----------
+// ---------- App-shell wrapper (file manager dashboard) ----------
 function appPage(title, username, activeFolder, folders, mainContent) {
-  const sidebarLinks = folders.map(f => `
+    const sidebarLinks = folders.map(f => `
     <a href="/folder/${encodeURIComponent(f)}" class="side-link ${activeFolder === f ? 'active' : ''}">
       <span class="side-icon">📁</span> ${f}
     </a>`).join('');
 
-  return `<!DOCTYPE html>
+    return `<!DOCTYPE html>
   <html><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${title} | Jisan Server</title>
   <style>${sharedStyles()}
@@ -149,7 +138,7 @@ function appPage(title, username, activeFolder, folders, mainContent) {
 }
 
 function sharedStyles() {
-  return `
+    return `
     * { box-sizing: border-box; }
     html, body { margin:0; min-height:100%; font-family:'Segoe UI', Roboto, Arial, sans-serif; color:#f1f5f9; overflow-x:hidden; }
     body {
@@ -208,7 +197,7 @@ function sharedStyles() {
 }
 
 function clientScript() {
-  return `<script>
+    return `<script>
     function togglePassword(id) {
       const input = document.getElementById(id);
       const btn = document.getElementById(id + '-eye');
@@ -220,22 +209,22 @@ function clientScript() {
 
 // ---------- Auth helpers ----------
 function requireLogin(req, res, next) {
-  if (!req.session.username) return res.redirect('/login');
-  next();
+    if (!req.session.username) return res.redirect('/login');
+    next();
 }
 function userDir(username) {
-  const dir = path.join(DATA_DIR, username);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  return dir;
+    const dir = path.join(DATA_DIR, username);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    return dir;
 }
 function getFolders(username) {
-  const dir = userDir(username);
-  return fs.readdirSync(dir).filter(f => fs.statSync(path.join(dir, f)).isDirectory());
+    const dir = userDir(username);
+    return fs.readdirSync(dir).filter(f => fs.statSync(path.join(dir, f)).isDirectory());
 }
 
 // ---------- Register ----------
 app.get('/register', (req, res) => {
-  res.send(authPage('Register', `
+    res.send(authPage('Register', `
     <h1>Create your account</h1>
     <form method="post" action="/register">
       <input name="username" placeholder="Choose a username" required />
@@ -253,38 +242,38 @@ app.get('/register', (req, res) => {
 });
 
 app.post('/register', async (req, res) => {
-  const { username, email, password, securityQuestion, securityAnswer } = req.body;
-  const clean = (username || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-  const cleanEmail = (email || '').trim().toLowerCase();
-  if (!clean || !cleanEmail || !password || !securityQuestion || !securityAnswer) {
-    return res.send('All fields are required. <a href="/register">Back</a>');
-  }
-  const users = getUsers();
-  if (users.find(u => u.username === clean)) return res.send('Username already taken. <a href="/register">Back</a>');
-  if (users.find(u => u.email === cleanEmail)) return res.send('Email already registered. <a href="/register">Back</a>');
+    const { username, email, password, securityQuestion, securityAnswer } = req.body;
+    const clean = (username || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    const cleanEmail = (email || '').trim().toLowerCase();
+    if (!clean || !cleanEmail || !password || !securityQuestion || !securityAnswer) {
+        return res.send('All fields are required. <a href="/register">Back</a>');
+    }
+    const users = getUsers();
+    if (users.find(u => u.username === clean)) return res.send('Username already taken. <a href="/register">Back</a>');
+    if (users.find(u => u.email === cleanEmail)) return res.send('Email already registered. <a href="/register">Back</a>');
 
-  const hash = await bcrypt.hash(password, 10);
-  const answerHash = await bcrypt.hash(securityAnswer.trim().toLowerCase(), 10);
-  const verifyToken = crypto.randomBytes(24).toString('hex');
+    const hash = await bcrypt.hash(password, 10);
+    const answerHash = await bcrypt.hash(securityAnswer.trim().toLowerCase(), 10);
+    const verifyToken = crypto.randomBytes(24).toString('hex');
 
-  users.push({ username: clean, email: cleanEmail, password: hash, securityQuestion: securityQuestion.trim(), securityAnswer: answerHash, verified: false, verifyToken });
-  saveUsers(users);
-  userDir(clean);
+    users.push({ username: clean, email: cleanEmail, password: hash, securityQuestion: securityQuestion.trim(), securityAnswer: answerHash, verified: false, verifyToken });
+    saveUsers(users);
+    userDir(clean);
 
-  const verifyLink = `${BASE_URL}/verify-email?token=${verifyToken}`;
-  try {
-    await transporter.sendMail({
-      from: `"Jisan Server" <${GMAIL_USER}>`,
-      to: cleanEmail,
-      subject: 'Verify your Jisan Server account',
-      html: `<p>Hi ${clean},</p><p>Click below to verify your account:</p><p><a href="${verifyLink}">${verifyLink}</a></p>`
-    });
-  } catch (err) {
-    console.error('Email send failed:', err.message);
-    return res.send(`Account created, but the verification email failed to send (${err.message}). <a href="/resend-verification">Try resending</a> | <a href="/login">Go to login</a>`);
-  }
+    const verifyLink = `${BASE_URL}/verify-email?token=${verifyToken}`;
+    try {
+        await resend.emails.send({
+            from: 'Jisan Server <onboarding@resend.dev>',
+            to: cleanEmail,
+            subject: 'Verify your Jisan Server account',
+            html: `<p>Hi ${clean},</p><p>Click below to verify your account:</p><p><a href="${verifyLink}">${verifyLink}</a></p>`
+        });
+    } catch (err) {
+        console.error('Email send failed:', err.message);
+        return res.send(`Account created, but the verification email failed to send (${err.message}). <a href="/resend-verification">Try resending</a> | <a href="/login">Go to login</a>`);
+    }
 
-  res.send(authPage('Check your email', `
+    res.send(authPage('Check your email', `
     <h1>Verify your email</h1>
     <p>We sent a verification link to <strong>${cleanEmail}</strong>. Click it before logging in.</p>
     <p><a href="/login">Back to login</a></p>
@@ -293,19 +282,19 @@ app.post('/register', async (req, res) => {
 
 // ---------- Email verification ----------
 app.get('/verify-email', (req, res) => {
-  const { token } = req.query;
-  const users = getUsers();
-  const user = users.find(u => u.verifyToken === token);
-  if (!user) return res.send('Invalid or expired verification link. <a href="/login">Back to login</a>');
-  user.verified = true;
-  delete user.verifyToken;
-  saveUsers(users);
-  res.send(authPage('Verified', `<h1>Email verified!</h1><p>Your account is now active.</p><p><a href="/login">Log in now</a></p>`));
+    const { token } = req.query;
+    const users = getUsers();
+    const user = users.find(u => u.verifyToken === token);
+    if (!user) return res.send('Invalid or expired verification link. <a href="/login">Back to login</a>');
+    user.verified = true;
+    delete user.verifyToken;
+    saveUsers(users);
+    res.send(authPage('Verified', `<h1>Email verified!</h1><p>Your account is now active.</p><p><a href="/login">Log in now</a></p>`));
 });
 
 // ---------- Resend verification ----------
 app.get('/resend-verification', (req, res) => {
-  res.send(authPage('Resend Verification', `
+    res.send(authPage('Resend Verification', `
     <h1>Resend verification email</h1>
     <form method="post" action="/resend-verification">
       <input name="username" placeholder="Enter your username" required />
@@ -316,35 +305,35 @@ app.get('/resend-verification', (req, res) => {
 });
 
 app.post('/resend-verification', async (req, res) => {
-  const clean = (req.body.username || '').trim().toLowerCase();
-  const users = getUsers();
-  const user = users.find(u => u.username === clean);
-  if (!user) return res.send('No account found with that username. <a href="/resend-verification">Try again</a>');
-  if (user.verified) return res.send('This account is already verified. <a href="/login">Log in</a>');
+    const clean = (req.body.username || '').trim().toLowerCase();
+    const users = getUsers();
+    const user = users.find(u => u.username === clean);
+    if (!user) return res.send('No account found with that username. <a href="/resend-verification">Try again</a>');
+    if (user.verified) return res.send('This account is already verified. <a href="/login">Log in</a>');
 
-  const newToken = crypto.randomBytes(24).toString('hex');
-  user.verifyToken = newToken;
-  saveUsers(users);
+    const newToken = crypto.randomBytes(24).toString('hex');
+    user.verifyToken = newToken;
+    saveUsers(users);
 
-  const verifyLink = `${BASE_URL}/verify-email?token=${newToken}`;
-  try {
-    await transporter.sendMail({
-      from: `"Jisan Server" <${GMAIL_USER}>`,
-      to: user.email,
-      subject: 'Verify your Jisan Server account (resent)',
-      html: `<p>Hi ${user.username},</p><p>Here's your verification link again:</p><p><a href="${verifyLink}">${verifyLink}</a></p>`
-    });
-  } catch (err) {
-    console.error('Resend email failed:', err.message);
-    return res.send(`Failed to resend email: ${err.message} <a href="/resend-verification">Try again</a>`);
-  }
+    const verifyLink = `${BASE_URL}/verify-email?token=${newToken}`;
+    try {
+        await resend.emails.send({
+            from: 'Jisan Server <onboarding@resend.dev>',
+            to: user.email,
+            subject: 'Verify your Jisan Server account (resent)',
+            html: `<p>Hi ${user.username},</p><p>Here's your verification link again:</p><p><a href="${verifyLink}">${verifyLink}</a></p>`
+        });
+    } catch (err) {
+        console.error('Resend email failed:', err.message);
+        return res.send(`Failed to resend email: ${err.message} <a href="/resend-verification">Try again</a>`);
+    }
 
-  res.send(authPage('Email resent', `<h1>Verification email resent!</h1><p>Check <strong>${user.email}</strong>.</p><p><a href="/login">Back to login</a></p>`));
+    res.send(authPage('Email resent', `<h1>Verification email resent!</h1><p>Check <strong>${user.email}</strong>.</p><p><a href="/login">Back to login</a></p>`));
 });
 
 // ---------- Login / Logout ----------
 app.get('/login', (req, res) => {
-  res.send(authPage('Login', `
+    res.send(authPage('Login', `
     <h1>Log in to Jisan Server</h1>
     <form method="post" action="/login">
       <input name="username" placeholder="Username" required />
@@ -361,23 +350,23 @@ app.get('/login', (req, res) => {
 });
 
 app.post('/login', async (req, res) => {
-  const { username, password } = req.body;
-  const clean = (username || '').trim().toLowerCase();
-  const users = getUsers();
-  const user = users.find(u => u.username === clean);
-  if (!user) return res.send('Wrong username or password. <a href="/login">Try again</a>');
-  const match = await bcrypt.compare(password, user.password);
-  if (!match) return res.send('Wrong username or password. <a href="/login">Try again</a>');
-  if (!user.verified) return res.send('Please verify your email before logging in. <a href="/resend-verification">Resend email</a>');
-  req.session.username = clean;
-  res.redirect('/');
+    const { username, password } = req.body;
+    const clean = (username || '').trim().toLowerCase();
+    const users = getUsers();
+    const user = users.find(u => u.username === clean);
+    if (!user) return res.send('Wrong username or password. <a href="/login">Try again</a>');
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.send('Wrong username or password. <a href="/login">Try again</a>');
+    if (!user.verified) return res.send('Please verify your email before logging in. <a href="/resend-verification">Resend email</a>');
+    req.session.username = clean;
+    res.redirect('/');
 });
 
 app.get('/logout', (req, res) => { req.session.destroy(() => res.redirect('/login')); });
 
 // ---------- Forgot password ----------
 app.get('/forgot-password', (req, res) => {
-  res.send(authPage('Forgot Password', `
+    res.send(authPage('Forgot Password', `
     <h1>Reset your password</h1>
     <form method="get" action="/forgot-password/question">
       <input name="username" placeholder="Enter your username" required />
@@ -388,11 +377,11 @@ app.get('/forgot-password', (req, res) => {
 });
 
 app.get('/forgot-password/question', (req, res) => {
-  const clean = (req.query.username || '').trim().toLowerCase();
-  const users = getUsers();
-  const user = users.find(u => u.username === clean);
-  if (!user) return res.send('No account found. <a href="/forgot-password">Try again</a>');
-  res.send(authPage('Security Question', `
+    const clean = (req.query.username || '').trim().toLowerCase();
+    const users = getUsers();
+    const user = users.find(u => u.username === clean);
+    if (!user) return res.send('No account found. <a href="/forgot-password">Try again</a>');
+    res.send(authPage('Security Question', `
     <h1>Security Question</h1>
     <form method="post" action="/forgot-password/reset">
       <input type="hidden" name="username" value="${user.username}" />
@@ -409,55 +398,55 @@ app.get('/forgot-password/question', (req, res) => {
 });
 
 app.post('/forgot-password/reset', async (req, res) => {
-  const { username, answer, newPassword } = req.body;
-  const clean = (username || '').trim().toLowerCase();
-  const users = getUsers();
-  const user = users.find(u => u.username === clean);
-  if (!user) return res.send('Account not found. <a href="/forgot-password">Try again</a>');
-  const correct = await bcrypt.compare((answer || '').trim().toLowerCase(), user.securityAnswer);
-  if (!correct) return res.send('Incorrect answer. <a href="/forgot-password">Try again</a>');
-  if (!newPassword || newPassword.length < 3) return res.send('Password too short. <a href="/forgot-password">Try again</a>');
-  user.password = await bcrypt.hash(newPassword, 10);
-  saveUsers(users);
-  res.send('Password reset successfully! <a href="/login">Log in now</a>');
+    const { username, answer, newPassword } = req.body;
+    const clean = (username || '').trim().toLowerCase();
+    const users = getUsers();
+    const user = users.find(u => u.username === clean);
+    if (!user) return res.send('Account not found. <a href="/forgot-password">Try again</a>');
+    const correct = await bcrypt.compare((answer || '').trim().toLowerCase(), user.securityAnswer);
+    if (!correct) return res.send('Incorrect answer. <a href="/forgot-password">Try again</a>');
+    if (!newPassword || newPassword.length < 3) return res.send('Password too short. <a href="/forgot-password">Try again</a>');
+    user.password = await bcrypt.hash(newPassword, 10);
+    saveUsers(users);
+    res.send('Password reset successfully! <a href="/login">Log in now</a>');
 });
 
 // ---------- File storage ----------
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const folder = (req.body.folder || 'general').replace(/[^a-zA-Z0-9_-]/g, '');
-    const dest = path.join(userDir(req.session.username), folder);
-    if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
-    cb(null, dest);
-  },
-  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+    destination: (req, file, cb) => {
+        const folder = (req.body.folder || 'general').replace(/[^a-zA-Z0-9_-]/g, '');
+        const dest = path.join(userDir(req.session.username), folder);
+        if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+        cb(null, dest);
+    },
+    filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
 });
 const upload = multer({ storage });
 
 function fileCardHtml(folder, f) {
-  const ext = path.extname(f).toLowerCase();
-  const url = `/files/${folder}/${encodeURIComponent(f)}`;
-  let preview = '';
-  if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) preview = `<img src="${url}" class="thumb" />`;
-  else if (['.mp4', '.webm', '.mov'].includes(ext)) preview = `<video src="${url}" class="thumb" controls></video>`;
-  else if (ext === '.pdf') preview = `<embed src="${url}" class="thumb" type="application/pdf" />`;
-  else preview = `<div class="filetype">${ext.replace('.', '').toUpperCase() || 'FILE'}</div>`;
-  return `<div class="file-card">${preview}<p class="filename">${f}</p><a href="${url}" download class="download-link">Download</a></div>`;
+    const ext = path.extname(f).toLowerCase();
+    const url = `/files/${folder}/${encodeURIComponent(f)}`;
+    let preview = '';
+    if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) preview = `<img src="${url}" class="thumb" />`;
+    else if (['.mp4', '.webm', '.mov'].includes(ext)) preview = `<video src="${url}" class="thumb" controls></video>`;
+    else if (ext === '.pdf') preview = `<embed src="${url}" class="thumb" type="application/pdf" />`;
+    else preview = `<div class="filetype">${ext.replace('.', '').toUpperCase() || 'FILE'}</div>`;
+    return `<div class="file-card">${preview}<p class="filename">${f}</p><a href="${url}" download class="download-link">Download</a></div>`;
 }
 
-// ---------- Dashboard (root: folder overview) ----------
+// ---------- Dashboard ----------
 app.get('/', requireLogin, (req, res) => {
-  const username = req.session.username;
-  const folders = getFolders(username);
-  const folderOptions = folders.map(f => `<option value="${f}">${f}</option>`).join('');
+    const username = req.session.username;
+    const folders = getFolders(username);
+    const folderOptions = folders.map(f => `<option value="${f}">${f}</option>`).join('');
 
-  const folderCards = folders.map(f => `
+    const folderCards = folders.map(f => `
     <a href="/folder/${encodeURIComponent(f)}" class="folder-card">
       <div class="folder-icon">📁</div>
       <div class="folder-name">${f}</div>
     </a>`).join('');
 
-  const main = `
+    const main = `
     <div class="breadcrumb">Home</div>
     <h1 class="page-title">Welcome back, ${username}</h1>
     <div class="toolbar">
@@ -480,36 +469,36 @@ app.get('/', requireLogin, (req, res) => {
     `}
   `;
 
-  res.send(appPage('Dashboard', username, null, folders, main));
+    res.send(appPage('Dashboard', username, null, folders, main));
 });
 
 app.post('/create-folder', requireLogin, (req, res) => {
-  const folder = (req.body.foldername || '').replace(/[^a-zA-Z0-9_-]/g, '');
-  if (!folder) return res.send('Invalid folder name. <a href="/">Back</a>');
-  fs.mkdirSync(path.join(userDir(req.session.username), folder), { recursive: true });
-  res.redirect('/');
+    const folder = (req.body.foldername || '').replace(/[^a-zA-Z0-9_-]/g, '');
+    if (!folder) return res.send('Invalid folder name. <a href="/">Back</a>');
+    fs.mkdirSync(path.join(userDir(req.session.username), folder), { recursive: true });
+    res.redirect('/');
 });
 
 app.post('/upload', requireLogin, upload.single('myfile'), (req, res) => {
-  const folder = (req.body.folder || 'general').replace(/[^a-zA-Z0-9_-]/g, '');
-  res.redirect(`/folder/${encodeURIComponent(folder)}`);
+    const folder = (req.body.folder || 'general').replace(/[^a-zA-Z0-9_-]/g, '');
+    res.redirect(`/folder/${encodeURIComponent(folder)}`);
 });
 
-// ---------- Folder view (file manager style) ----------
+// ---------- Folder view ----------
 app.get('/folder/:folder', requireLogin, (req, res) => {
-  const username = req.session.username;
-  const folders = getFolders(username);
-  const folder = req.params.folder;
-  const folderPath = path.join(userDir(username), folder);
+    const username = req.session.username;
+    const folders = getFolders(username);
+    const folder = req.params.folder;
+    const folderPath = path.join(userDir(username), folder);
 
-  if (!folders.includes(folder)) {
-    return res.send(appPage('Not found', username, null, folders, `<div class="empty-state"><div class="emoji">🚫</div><p>Folder not found.</p></div>`));
-  }
+    if (!folders.includes(folder)) {
+        return res.send(appPage('Not found', username, null, folders, `<div class="empty-state"><div class="emoji">🚫</div><p>Folder not found.</p></div>`));
+    }
 
-  const files = fs.readdirSync(folderPath);
-  const cards = files.map(f => fileCardHtml(folder, f)).join('');
+    const files = fs.readdirSync(folderPath);
+    const cards = files.map(f => fileCardHtml(folder, f)).join('');
 
-  const main = `
+    const main = `
     <div class="breadcrumb"><a href="/">Home</a> / ${folder}</div>
     <h1 class="page-title">${folder}</h1>
     <div class="toolbar">
@@ -524,17 +513,17 @@ app.get('/folder/:folder', requireLogin, (req, res) => {
     `}
   `;
 
-  res.send(appPage(folder, username, folder, folders, main));
+    res.send(appPage(folder, username, folder, folders, main));
 });
 
 app.get('/files/:folder/:filename', requireLogin, (req, res) => {
-  const base = userDir(req.session.username);
-  const filePath = path.join(base, req.params.folder, req.params.filename);
-  if (!filePath.startsWith(base)) return res.status(403).send('Forbidden');
-  if (!fs.existsSync(filePath)) return res.status(404).send('Not found');
-  res.sendFile(filePath);
+    const base = userDir(req.session.username);
+    const filePath = path.join(base, req.params.folder, req.params.filename);
+    if (!filePath.startsWith(base)) return res.status(403).send('Forbidden');
+    if (!fs.existsSync(filePath)) return res.status(404).send('Not found');
+    res.sendFile(filePath);
 });
 
 app.listen(PORT, () => {
-  console.log(`Jisan Server running at ${BASE_URL}`);
+    console.log(`Jisan Server running at ${BASE_URL}`);
 });
