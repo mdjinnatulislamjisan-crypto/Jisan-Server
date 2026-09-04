@@ -17,10 +17,12 @@ const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 465,
-  secure: true,
+  port: 587,
+  secure: false,
+  requireTLS: true,
   auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
-  family: 4
+  family: 4,
+  connectionTimeout: 10000
 });
 
 const DATA_DIR = path.join(__dirname, 'my-files');
