@@ -11,26 +11,27 @@ const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
 async function sendMail({ to, subject, html }) {
-    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    const auth = Buffer.from(`${process.env.MAILJET_API_KEY}:${process.env.MAILJET_API_SECRET}`).toString('base64');
+    const res = await fetch('https://api.mailjet.com/v3.1/send', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'api-key': process.env.BREVO_API_KEY
+            'Authorization': `Basic ${auth}`
         },
         body: JSON.stringify({
-            sender: { name: 'Jisan Server', email: process.env.BREVO_SENDER_EMAIL },
-            to: [{ email: to }],
-            subject,
-            htmlContent: html
+            Messages: [{
+                From: { Email: process.env.MAILJET_SENDER_EMAIL, Name: 'Jisan Server' },
+                To: [{ Email: to }],
+                Subject: subject,
+                HTMLPart: html
+            }]
         })
     });
     if (!res.ok) {
         const errText = await res.text();
-        throw new Error(`Brevo error (${res.status}): ${errText}`);
+        throw new Error(`Mailjet error (${res.status}): ${errText}`);
     }
 }
-
 const DATA_DIR = path.join(__dirname, 'my-files');
 const USERS_FILE = path.join(__dirname, 'users.json');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
