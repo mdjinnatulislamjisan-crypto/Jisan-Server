@@ -5,12 +5,24 @@ const path = require('path');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
-const { Resend } = require('resend');
+const Mailjet = require('node-mailjet');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
-const resend = new Resend(process.env.RESEND_API_KEY);
+
+const mailjet = Mailjet.apiConnect(process.env.MAILJET_API_KEY, process.env.MAILJET_SECRET_KEY);
+
+async function sendEmail(toEmail, subject, html) {
+  return mailjet.post('send', { version: 'v3.1' }).request({
+    Messages: [{
+      From: { Email: process.env.MAILJET_SENDER_EMAIL, Name: 'Jisan Server' },
+      To: [{ Email: toEmail }],
+      Subject: subject,
+      HTMLPart: html
+    }]
+  });
+}
 
 const DATA_DIR = path.join(__dirname, 'my-files');
 const USERS_FILE = path.join(__dirname, 'users.json');
@@ -322,15 +334,15 @@ app.post('/register', async (req, res) => {
   userDir(clean);
 
   const verifyLink = `${BASE_URL}/verify-email?token=${verifyToken}`;
-  const { data, error } = await resend.emails.send({
-    from: 'Jisan Server <onboarding@resend.dev>',
-    to: cleanEmail,
-    subject: 'Verify your Jisan Server account',
-    html: `<p>Hi ${clean},</p><p>Click below to verify your account:</p><p><a href="${verifyLink}">${verifyLink}</a></p>`
-  });
-  if (error) {
-    console.error('Email send failed:', error.message);
-    return res.send(`Account created, but the verification email failed to send (${error.message}). <a href="/resend-verification">Try resending</a> | <a href="/login">Go to login</a>`);
+  try {
+    await sendEmail(
+      cleanEmail,
+      'Verify your Jisan Server account',
+      `<p>Hi ${clean},</p><p>Click below to verify your account:</p><p><a href="${verifyLink}">${verifyLink}</a></p>`
+    );
+  } catch (err) {
+    console.error('Email send failed:', err.message);
+    return res.send(`Account created, but the verification email failed to send (${err.message}). <a href="/resend-verification">Try resending</a> | <a href="/login">Go to login</a>`);
   }
 
   res.send(authPage('Check your email', `
@@ -378,15 +390,15 @@ app.post('/resend-verification', async (req, res) => {
   saveUsers(users);
 
   const verifyLink = `${BASE_URL}/verify-email?token=${newToken}`;
-  const { data, error } = await resend.emails.send({
-    from: 'Jisan Server <onboarding@resend.dev>',
-    to: user.email,
-    subject: 'Verify your Jisan Server account (resent)',
-    html: `<p>Hi ${user.username},</p><p>Here's your verification link again:</p><p><a href="${verifyLink}">${verifyLink}</a></p>`
-  });
-  if (error) {
-    console.error('Resend email failed:', error.message);
-    return res.send(`Failed to resend email: ${error.message} <a href="/resend-verification">Try again</a>`);
+  try {
+    await sendEmail(
+      user.email,
+      'Verify your Jisan Server account (resent)',
+      `<p>Hi ${user.username},</p><p>Here's your verification link again:</p><p><a href="${verifyLink}">${verifyLink}</a></p>`
+    );
+  } catch (err) {
+    console.error('Resend email failed:', err.message);
+    return res.send(`Failed to resend email: ${err.message} <a href="/resend-verification">Try again</a>`);
   }
 
   res.send(authPage('Email resent', `<h1>Verification email resent!</h1><p>Check <strong>${user.email}</strong>.</p><p class="hint-text">📩 Also check your Spam / Junk folder.</p><p><a href="/login">Back to login</a></p>`));
@@ -508,7 +520,7 @@ function fileCardHtml(folder, f) {
   </div>`;
 }
 
-// ---------- Dashboard (profile-style, social-media feel) ----------
+// ---------- Dashboard ----------
 app.get('/', requireLogin, (req, res) => {
   const username = req.session.username;
   const folders = getFolders(username);
@@ -575,7 +587,7 @@ app.post('/upload', requireLogin, upload.single('myfile'), (req, res) => {
   res.redirect(`/folder/${encodeURIComponent(folder)}`);
 });
 
-// ---------- Folder view (gallery / file explorer) ----------
+// ---------- Folder view ----------
 app.get('/folder/:folder', requireLogin, (req, res) => {
   const username = req.session.username;
   const folders = getFolders(username);
@@ -639,7 +651,7 @@ app.get('/settings', requireLogin, (req, res) => {
   res.send(appPage('Settings', username, 'settings', folders, main));
 });
 
-// ---------- Full PDF reader ----------
+// ---------- PDF reader ----------
 app.get('/view/:folder/:filename', requireLogin, (req, res) => {
   const username = req.session.username;
   const folders = getFolders(username);
