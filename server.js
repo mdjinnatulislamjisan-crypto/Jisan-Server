@@ -107,63 +107,60 @@ app.use(session({
   saveUninitialized: false
 }));
 
-// ---------- Shared styles ----------
+// ---------- Shared styles (Facebook-inspired light theme) ----------
 function sharedStyles() {
   return `
     * { box-sizing: border-box; }
-    html, body { margin:0; min-height:100%; font-family:'Segoe UI', Roboto, Arial, sans-serif; color:#f1f5f9; overflow-x:hidden; }
-    body { position:relative; min-height:100vh; padding:40px 20px;
-      background: linear-gradient(-45deg, #0b1120, #1e1b4b, #0c4a6e, #1e293b, #3b0764);
-      background-size: 400% 400%; animation: gradientMove 22s ease infinite; }
-    @keyframes gradientMove { 0%{background-position:0% 50%;} 50%{background-position:100% 50%;} 100%{background-position:0% 50%;} }
-    .bg-orb { position:fixed; border-radius:50%; filter:blur(70px); opacity:0.28; z-index:0; animation: floatOrb 14s ease-in-out infinite; }
-    .orb1 { width:360px; height:360px; background:#38bdf8; top:-80px; left:-80px; animation-duration:16s; }
-    .orb2 { width:300px; height:300px; background:#a855f7; bottom:-80px; right:-60px; animation-duration:18s; animation-delay:2s; }
-    .orb3 { width:220px; height:220px; background:#f472b6; top:45%; right:8%; animation-duration:22s; animation-delay:4s; }
-    @keyframes floatOrb { 0%,100%{transform:translateY(0) translateX(0);} 50%{transform:translateY(-30px) translateX(24px);} }
-    .card { position:relative; z-index:1; background: rgba(30,41,59,0.68); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
-      border-radius:20px; padding:34px 38px; box-shadow: 0 24px 70px rgba(0,0,0,0.55); border:1px solid rgba(148,163,184,0.18); }
-    .brand { display:flex; align-items:center; gap:10px; margin-bottom:18px; }
-    .brand-dot { width:12px; height:12px; border-radius:50%; background:#38bdf8; box-shadow:0 0 14px #38bdf8; }
-    .brand-name { font-weight:800; letter-spacing:0.8px; background:linear-gradient(90deg,#38bdf8,#a855f7); -webkit-background-clip:text; background-clip:text; color:transparent; font-size:16px; }
-    h1 { font-size:22px; margin-top:0; color:#e2e8f0; }
-    h3 { color:#93c5fd; margin-bottom:8px; }
-    a { color:#38bdf8; text-decoration:none; }
+    html, body { margin:0; min-height:100%; font-family:'Segoe UI', Helvetica, Arial, sans-serif; color:#1c1e21; }
+    body { background:#f0f2f5; min-height:100vh; }
+    a { color:#1877f2; text-decoration:none; }
     a:hover { text-decoration:underline; }
-    input, select, button, textarea { width:100%; padding:12px 14px; margin:6px 0 14px 0; border-radius:12px;
-      border:1px solid #334155; background: rgba(15,23,42,0.8); color:#f1f5f9; font-size:14px; font-family:inherit; }
-    input:focus, select:focus, textarea:focus { outline:none; border-color:#38bdf8; box-shadow:0 0 0 3px rgba(56,189,248,0.15); }
-    button { background: linear-gradient(135deg, #38bdf8, #6366f1); color:#0b1120; font-weight:700; border:none; cursor:pointer; transition:0.2s; }
-    button:hover { filter:brightness(1.12); transform:translateY(-1px); }
-    .btn-danger { background: linear-gradient(135deg, #f87171, #dc2626) !important; color:#fff !important; }
-    .btn-ghost { background: rgba(51,65,85,0.6) !important; color:#e2e8f0 !important; border:1px solid rgba(148,163,184,0.25) !important; }
-    .small-link { font-size:13px; color:#94a3b8; }
-    .hint-text { font-size:12px; color:#fbbf24; margin:-8px 0 12px 2px; }
+    h1 { font-size:22px; margin-top:0; color:#050505; }
+    h3 { color:#65676b; margin-bottom:8px; font-size:15px; }
+    .card { background:#fff; border-radius:12px; padding:24px 26px; box-shadow:0 1px 2px rgba(0,0,0,0.1); border:1px solid #dadde1; }
+    .brand { display:flex; align-items:center; gap:10px; margin-bottom:18px; }
+    .brand-dot { width:12px; height:12px; border-radius:50%; background:#1877f2; }
+    .brand-name { font-weight:800; letter-spacing:0.3px; color:#1877f2; font-size:20px; }
+    input, select, button, textarea { width:100%; padding:11px 14px; margin:6px 0 14px 0; border-radius:8px;
+      border:1px solid #ccd0d5; background:#f5f6f7; color:#1c1e21; font-size:14px; font-family:inherit; }
+    input:focus, select:focus, textarea:focus { outline:none; border-color:#1877f2; background:#fff; box-shadow:0 0 0 3px rgba(24,119,242,0.15); }
+    button { background:#1877f2; color:#fff; font-weight:700; border:none; cursor:pointer; transition:0.15s; }
+    button:hover { background:#166fe5; }
+    .btn-danger { background:#fa383e !important; color:#fff !important; }
+    .btn-ghost { background:#e4e6eb !important; color:#050505 !important; }
+    .btn-ghost:hover { background:#d8dadf !important; }
+    .small-link { font-size:13px; color:#65676b; }
+    .hint-text { font-size:12.5px; color:#e65100; margin:-8px 0 12px 2px; }
     .pw-wrapper { position:relative; }
     .pw-wrapper input { padding-right:42px; }
-    .pw-toggle { position:absolute; right:10px; top:8px; cursor:pointer; background:none !important; border:none; width:auto; padding:0; margin:0; font-size:16px; color:#94a3b8; }
-    .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap:16px; }
-    .file-card { background: rgba(15,23,42,0.85); border:1px solid #334155; border-radius:14px; padding:0; text-align:center; transition:0.2s; overflow:hidden; position:relative; }
-    .file-card:hover { border-color:#38bdf8; transform: translateY(-3px); }
-    .thumb-wrap { position:relative; width:100%; height:130px; background:#1e293b; overflow:hidden; }
+    .pw-toggle { position:absolute; right:10px; top:8px; cursor:pointer; background:none !important; border:none; width:auto; padding:0; margin:0; font-size:16px; color:#65676b; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap:14px; }
+    .file-card { background:#fff; border:1px solid #dadde1; border-radius:10px; padding:0; text-align:center; transition:0.15s; overflow:hidden; position:relative; }
+    .file-card:hover { box-shadow:0 2px 8px rgba(0,0,0,0.15); transform:translateY(-2px); }
+    .thumb-wrap { position:relative; width:100%; height:130px; background:#f0f2f5; overflow:hidden; }
     .thumb { width:100%; height:130px; object-fit:cover; display:block; }
-    .filetype { display:flex; align-items:center; justify-content:center; height:130px; color:#94a3b8; font-weight:700; font-size:13px; background:#1e293b; }
-    .card-overlay { position:absolute; inset:0; background: linear-gradient(to top, rgba(0,0,0,0.8), transparent 55%);
+    .filetype { display:flex; align-items:center; justify-content:center; height:130px; color:#65676b; font-weight:700; font-size:13px; background:#f0f2f5; }
+    .card-overlay { position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,0.65), transparent 55%);
       display:flex; align-items:flex-end; justify-content:flex-end; padding:8px; opacity:0; transition:0.2s; gap:4px; flex-wrap:wrap; }
     .file-card:hover .card-overlay { opacity:1; }
     .overlay-btn { width:auto; padding:6px 9px; margin:0; font-size:11px; border-radius:8px; text-decoration:none; }
-    .filename { font-size:12px; color:#cbd5e1; margin:8px 10px 10px 10px; word-break:break-word; }
-    .folder-card { background: rgba(15,23,42,0.7); border:1px solid #334155; border-radius:16px; padding:20px; text-align:center; transition:0.2s; display:block; }
-    .folder-card:hover { border-color:#a855f7; transform: translateY(-3px); text-decoration:none; }
+    .filename { font-size:12px; color:#65676b; margin:8px 10px 10px 10px; word-break:break-word; }
+    .folder-card { background:#fff; border:1px solid #dadde1; border-radius:12px; padding:20px; text-align:center; transition:0.15s; display:block; }
+    .folder-card:hover { box-shadow:0 2px 8px rgba(0,0,0,0.15); transform:translateY(-2px); text-decoration:none; }
     .folder-icon { font-size:34px; margin-bottom:8px; }
-    .folder-name { font-size:14px; color:#e2e8f0; font-weight:600; word-break:break-word; }
-    .settings-row { display:flex; justify-content:space-between; align-items:center; padding:14px 0; border-bottom:1px solid rgba(148,163,184,0.12); gap:12px; flex-wrap:wrap; }
+    .folder-name { font-size:14px; color:#050505; font-weight:600; word-break:break-word; }
+    .settings-row { display:flex; justify-content:space-between; align-items:center; padding:14px 0; border-bottom:1px solid #e4e6eb; gap:12px; flex-wrap:wrap; }
     .settings-row:last-child { border-bottom:none; }
-    .announcement-banner { background: linear-gradient(135deg, rgba(251,191,36,0.15), rgba(251,191,36,0.05)); border:1px solid rgba(251,191,36,0.4); border-radius:14px; padding:14px 18px; margin-bottom:20px; font-size:14px; color:#fde68a; }
-    .msg-bubble { max-width:75%; padding:10px 14px; border-radius:14px; margin-bottom:8px; font-size:14px; }
-    .msg-mine { background: linear-gradient(135deg,#38bdf8,#6366f1); color:#0b1120; margin-left:auto; }
-    .msg-theirs { background: rgba(51,65,85,0.7); color:#e2e8f0; }
-    .msg-list { display:flex; flex-direction:column; max-height:400px; overflow-y:auto; padding:10px; }
+    .announcement-banner { background:#e7f3ff; border:1px solid #cfe3ff; border-radius:10px; padding:14px 18px; margin-bottom:18px; font-size:14px; color:#0a58ca; }
+    .msg-bubble { max-width:75%; padding:9px 14px; border-radius:16px; margin-bottom:8px; font-size:14px; }
+    .msg-mine { background:#1877f2; color:#fff; margin-left:auto; border-bottom-right-radius:4px; }
+    .msg-theirs { background:#e4e6eb; color:#050505; border-bottom-left-radius:4px; }
+    .msg-list { display:flex; flex-direction:column; max-height:420px; overflow-y:auto; padding:10px; }
+    .fb-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; }
+    .fb-badge.green { background:#e3f6e9; color:#1a7f3c; }
+    .fb-badge.red { background:#fde8e8; color:#c0262b; }
+    .fb-badge.gray { background:#e4e6eb; color:#65676b; }
+    .fb-badge.blue { background:#e7f3ff; color:#1877f2; }
   `;
 }
 function clientScript() {
@@ -174,17 +171,49 @@ function clientScript() {
       if (input.type === 'password') { input.type='text'; btn.textContent='🙈'; }
       else { input.type='password'; btn.textContent='👁️'; }
     }
+    // ---- Auto-sync: polls a JSON endpoint every 2.5s and re-renders the
+    // message list in place, so chat/support/admin threads update live
+    // without the user ever hitting refresh. ----
+    function startAutoSync(apiUrl, listElId, mineTest) {
+      const listEl = document.getElementById(listElId);
+      if (!listEl) return;
+      let lastCount = -1;
+      async function tick() {
+        try {
+          const res = await fetch(apiUrl, { cache: 'no-store' });
+          if (!res.ok) return;
+          const msgs = await res.json();
+          if (msgs.length === lastCount) return; // nothing new, skip re-render
+          lastCount = msgs.length;
+          const wasAtBottom = listEl.scrollTop + listEl.clientHeight >= listEl.scrollHeight - 30;
+          listEl.innerHTML = msgs.map(m => {
+            const mine = mineTest(m);
+            let html = '<div class="msg-bubble ' + (mine ? 'msg-mine' : 'msg-theirs') + '">';
+            if (m.label) html += '<b>' + m.label + '</b> ';
+            if (m.text) html += m.text;
+            if (m.fileUrl) html += '<br/><a href="' + m.fileUrl + '" style="color:inherit;text-decoration:underline;">📎 ' + m.fileName + '</a>';
+            html += '</div>';
+            return html;
+          }).join('') || '<p class="small-link">No messages yet.</p>';
+          if (wasAtBottom) listEl.scrollTop = listEl.scrollHeight;
+        } catch (e) { /* network hiccup — try again next tick */ }
+      }
+      tick();
+      setInterval(tick, 2500);
+    }
   </script>`;
 }
 
 function authPage(title, body) {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${title} — Jisan Server</title>
-  <style>${sharedStyles()} body.auth { display:flex; justify-content:center; align-items:center; } .auth-card { max-width: 430px; width: 100%; }</style></head>
+  <style>${sharedStyles()}
+    body.auth { display:flex; justify-content:center; align-items:center; min-height:100vh; padding:20px; }
+    .auth-card { max-width: 400px; width: 100%; }
+  </style></head>
   <body class="auth">
-    <div class="bg-orb orb1"></div><div class="bg-orb orb2"></div><div class="bg-orb orb3"></div>
     <div class="card auth-card">
-      <div class="brand"><span class="brand-dot"></span><span class="brand-name">JISAN SERVER</span></div>
+      <div class="brand"><span class="brand-dot"></span><span class="brand-name">Jisan Server</span></div>
       ${body}
     </div>
     ${clientScript()}
@@ -200,55 +229,76 @@ function appPage(title, username, activeKey, folders, mainContent, announcementH
   return `<!DOCTYPE html><html><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${title} — Jisan Server</title>
   <style>${sharedStyles()}
-    body.dash { display:block; padding:0; align-items:initial; justify-content:initial; }
-    .shell { position:relative; z-index:1; display:flex; min-height:100vh; }
-    .sidebar { width: 260px; flex-shrink:0; background: rgba(15,23,42,0.75); backdrop-filter: blur(16px);
-      border-right: 1px solid rgba(148,163,184,0.15); padding: 24px 18px; display:flex; flex-direction:column; gap: 18px; overflow-y:auto; }
-    .side-nav { display:flex; flex-direction:column; gap:4px; }
-    .side-link { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:10px; color:#cbd5e1; font-size:14px; text-decoration:none; transition:0.15s; }
-    .side-link:hover { background: rgba(56,189,248,0.1); color:#e2e8f0; text-decoration:none; }
-    .side-link.active { background: linear-gradient(135deg, rgba(56,189,248,0.25), rgba(99,102,241,0.25)); color:#7dd3fc; font-weight:600; }
-    .side-section-title { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:#64748b; margin: 10px 0 2px 4px; }
-    .user-chip { display:flex; align-items:center; gap:10px; padding:10px 12px; background:rgba(30,41,59,0.6); border-radius:12px; border:1px solid rgba(148,163,184,0.15); }
-    .avatar { width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,#38bdf8,#6366f1); display:flex; align-items:center; justify-content:center; font-weight:700; color:#0f172a; flex-shrink:0; }
+    body.dash { min-height:100vh; }
+    .topbar { position:sticky; top:0; z-index:50; height:56px; background:#fff; border-bottom:1px solid #dadde1;
+      display:flex; align-items:center; justify-content:space-between; padding:0 16px; box-shadow:0 1px 2px rgba(0,0,0,0.08); }
+    .topbar-left { display:flex; align-items:center; gap:10px; }
+    .topbar-logo { font-weight:800; font-size:20px; color:#1877f2; }
+    .topbar-search { background:#f0f2f5; border-radius:20px; padding:8px 16px; font-size:13px; color:#65676b; display:none; }
+    .topbar-right { display:flex; align-items:center; gap:10px; }
+    .topbar-icon { width:38px; height:38px; border-radius:50%; background:#e4e6eb; display:flex; align-items:center; justify-content:center; font-size:17px; text-decoration:none; color:#050505; position:relative; }
+    .topbar-icon:hover { background:#d8dadf; text-decoration:none; }
+    .avatar { width:34px; height:34px; border-radius:50%; background:#1877f2; display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; flex-shrink:0; }
     .avatar-lg { width:64px; height:64px; font-size:24px; }
-    .main { flex:1; padding: 28px 34px; min-width:0; }
-    .breadcrumb { font-size:13px; color:#94a3b8; margin-bottom:6px; }
-    .page-title { font-size:26px; font-weight:700; margin: 0 0 6px 0; color:#f1f5f9; }
-    .toolbar { display:flex; gap:12px; margin-bottom:10px; flex-wrap:wrap; align-items:center; }
+    .shell { display:flex; max-width:1180px; margin:0 auto; align-items:flex-start; gap:18px; padding:18px 14px; }
+    .sidebar { width: 260px; flex-shrink:0; position:sticky; top:74px; }
+    .side-nav { display:flex; flex-direction:column; gap:2px; }
+    .side-link { display:flex; align-items:center; gap:12px; padding:10px 12px; border-radius:8px; color:#050505; font-size:15px; text-decoration:none; transition:0.1s; font-weight:500; }
+    .side-link:hover { background:#e4e6eb; text-decoration:none; }
+    .side-link.active { background:#e7f3ff; color:#1877f2; font-weight:700; }
+    .side-icon { font-size:18px; width:22px; text-align:center; }
+    .side-section-title { font-size:12px; text-transform:uppercase; letter-spacing:0.5px; color:#65676b; margin: 14px 0 4px 12px; font-weight:700; }
+    .user-chip { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; }
+    .main { flex:1; min-width:0; }
+    .breadcrumb { font-size:13px; color:#65676b; margin-bottom:6px; }
+    .page-title { font-size:24px; font-weight:800; margin: 0 0 6px 0; color:#050505; }
+    .toolbar { display:flex; gap:12px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
     .toolbar form { display:flex; gap:8px; align-items:center; margin:0; flex-wrap:wrap; }
     .toolbar input, .toolbar select { margin:0; width:auto; min-width:160px; }
     .toolbar button { margin:0; width:auto; padding:10px 18px; }
-    .empty-state { text-align:center; padding: 60px 20px; color:#64748b; }
+    .empty-state { text-align:center; padding: 50px 20px; color:#65676b; background:#fff; border-radius:12px; border:1px solid #dadde1; }
     .empty-state .emoji { font-size:42px; margin-bottom:10px; }
-    .profile-header { display:flex; align-items:center; gap:18px; padding:22px 26px; background: rgba(15,23,42,0.6); border:1px solid rgba(148,163,184,0.15); border-radius:18px; margin-bottom:20px; }
-    .profile-stats { display:flex; gap:26px; margin-top:6px; font-size:13px; color:#94a3b8; }
-    .profile-stats b { color:#e2e8f0; }
-    @media (max-width: 800px) { .shell { flex-direction:column; } .sidebar { width:100%; flex-direction:row; overflow-x:auto; align-items:center; } .side-nav { flex-direction:row; } .main { padding: 20px; } .profile-header { flex-direction:column; text-align:center; } }
+    .profile-header { display:flex; align-items:center; gap:18px; padding:22px 26px; background:#fff; border:1px solid #dadde1; border-radius:12px; margin-bottom:16px; }
+    .profile-stats { display:flex; gap:26px; margin-top:6px; font-size:13px; color:#65676b; }
+    .profile-stats b { color:#050505; }
+    @media (max-width: 900px) {
+      .shell { flex-direction:column; padding:12px; }
+      .sidebar { width:100%; position:static; }
+      .topbar-search { display:none !important; }
+      .profile-header { flex-direction:column; text-align:center; }
+    }
   </style></head>
   <body class="dash">
-    <div class="bg-orb orb1"></div><div class="bg-orb orb2"></div><div class="bg-orb orb3"></div>
+    <div class="topbar">
+      <div class="topbar-left">
+        <span class="topbar-logo">Jisan Server</span>
+        <span class="topbar-search">🔍 Search Jisan Server</span>
+      </div>
+      <div class="topbar-right">
+        <a href="/messages" class="topbar-icon" title="Messages">💬</a>
+        <a href="/friends" class="topbar-icon" title="Friends">👥</a>
+        <a href="/support" class="topbar-icon" title="Help &amp; Support">🆘</a>
+        <a href="/settings" class="topbar-icon" title="Settings">⚙️</a>
+        <div class="avatar">${username.charAt(0).toUpperCase()}</div>
+      </div>
+    </div>
     <div class="shell">
       <aside class="sidebar">
-        <div class="brand"><span class="brand-dot"></span><span class="brand-name">JISAN SERVER</span></div>
-        <div class="user-chip">
-          <div class="avatar">${username.charAt(0).toUpperCase()}</div>
-          <div><div style="font-size:13px; font-weight:600; color:#e2e8f0;">${username}</div>
-          <div style="font-size:11px; color:#64748b;"><a href="/logout">Log out</a></div></div>
-        </div>
-        <div>
-          <div class="side-section-title">Overview</div>
-          <div class="side-nav">
-            <a href="/" class="side-link ${activeKey === 'home' ? 'active' : ''}">🏠 Dashboard</a>
-            <a href="/friends" class="side-link ${activeKey === 'friends' ? 'active' : ''}">👥 Friends</a>
-            <a href="/messages" class="side-link ${activeKey === 'messages' ? 'active' : ''}">💬 Messages</a>
-            <a href="/support" class="side-link ${activeKey === 'support' ? 'active' : ''}">🆘 Help & Support</a>
-            <a href="/settings" class="side-link ${activeKey === 'settings' ? 'active' : ''}">⚙️ Settings</a>
+        <div class="card" style="padding:8px;">
+          <a href="/" class="user-chip" style="text-decoration:none;">
+            <div class="avatar">${username.charAt(0).toUpperCase()}</div>
+            <div style="font-size:14px; font-weight:700; color:#050505;">${username}</div>
+          </a>
+          <div class="side-nav" style="margin-top:6px;">
+            <a href="/" class="side-link ${activeKey === 'home' ? 'active' : ''}"><span class="side-icon">🏠</span> Dashboard</a>
+            <a href="/friends" class="side-link ${activeKey === 'friends' ? 'active' : ''}"><span class="side-icon">👥</span> Friends</a>
+            <a href="/messages" class="side-link ${activeKey === 'messages' ? 'active' : ''}"><span class="side-icon">💬</span> Messages</a>
+            <a href="/support" class="side-link ${activeKey === 'support' ? 'active' : ''}"><span class="side-icon">🆘</span> Help &amp; Support</a>
+            <a href="/settings" class="side-link ${activeKey === 'settings' ? 'active' : ''}"><span class="side-icon">⚙️</span> Settings</a>
+            <a href="/logout" class="side-link"><span class="side-icon">🚪</span> Log out</a>
           </div>
-        </div>
-        <div>
           <div class="side-section-title">Your Folders</div>
-          <div class="side-nav">${sidebarLinks || '<span style="color:#475569; font-size:13px; padding:6px 12px;">No folders yet</span>'}</div>
+          <div class="side-nav">${sidebarLinks || '<span style="color:#8a8d91; font-size:13px; padding:6px 12px;">No folders yet</span>'}</div>
         </div>
       </aside>
       <main class="main">
@@ -260,7 +310,41 @@ function appPage(title, username, activeKey, folders, mainContent, announcementH
   </body></html>`;
 }
 
-// ---------- Helpers ----------
+// ---------- Admin page wrapper (professional dashboard look) ----------
+function adminPage(title, body, backLink) {
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${title} — Jisan Server Admin</title>
+  <style>${sharedStyles()}
+    body.admin-body { background:#0b1120; min-height:100vh; }
+    .admin-topbar { height:58px; background:#111827; border-bottom:1px solid #1f2937; display:flex; align-items:center;
+      justify-content:space-between; padding:0 22px; }
+    .admin-brand { display:flex; align-items:center; gap:10px; color:#e5e7eb; font-weight:800; font-size:17px; }
+    .admin-brand .dot { width:10px; height:10px; border-radius:50%; background:#38bdf8; }
+    .admin-topbar a { color:#93c5fd; font-size:13px; }
+    .admin-wrap { max-width:1100px; margin:0 auto; padding:26px 16px 60px; }
+    .stat-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:14px; margin-bottom:26px; }
+    .stat-card { background:#111827; border:1px solid #1f2937; border-radius:14px; padding:18px 20px; }
+    .stat-card .num { font-size:26px; font-weight:800; color:#f9fafb; }
+    .stat-card .label { font-size:12.5px; color:#9ca3af; margin-top:2px; }
+    .admin-section { background:#111827; border:1px solid #1f2937; border-radius:14px; padding:22px 24px; margin-bottom:20px; }
+    .admin-section h3 { color:#93c5fd; margin-top:0; }
+    .admin-section input, .admin-section textarea, .admin-section select { background:#0b1120; border:1px solid #1f2937; color:#f1f5f9; }
+    .admin-section input:focus, .admin-section textarea:focus { background:#0b1120; }
+    .admin-row { display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #1f2937; gap:12px; flex-wrap:wrap; color:#e5e7eb; font-size:13.5px; }
+    .admin-row:last-child { border-bottom:none; }
+    .admin-row button, .admin-row form button { width:auto; padding:6px 14px; font-size:12.5px; }
+    body.admin-body .msg-list { background:#0b1120; border:1px solid #1f2937; border-radius:10px; }
+    body.admin-body .small-link { color:#9ca3af; }
+  </style></head>
+  <body class="admin-body">
+    <div class="admin-topbar">
+      <div class="admin-brand"><span class="dot"></span> Jisan Server · Admin</div>
+      <div>${backLink ? `<a href="${backLink}" style="margin-right:16px;">← Back</a>` : ''}<a href="/admin/logout">Log out</a></div>
+    </div>
+    <div class="admin-wrap">${body}</div>
+    ${clientScript()}
+  </body></html>`;
+}
 function requireLogin(req, res, next) {
   if (!req.session.username) return res.redirect('/login');
   next();
@@ -721,15 +805,30 @@ app.get('/messages/:friend', requireLogin, async (req, res) => {
     <div class="breadcrumb"><a href="/messages">Messages</a> / ${friend}</div>
     <h1 class="page-title">Chat with ${friend}</h1>
     <div class="card" style="max-width:700px; padding:16px;">
-      <div class="msg-list">${msgsHtml || '<p class="small-link">No messages yet.</p>'}</div>
+      <div class="msg-list" id="chatMessages">${msgsHtml || '<p class="small-link">No messages yet.</p>'}</div>
     </div>
     <form method="post" action="/messages/${friend}/send" style="max-width:700px; margin-top:12px;">
       <input name="text" placeholder="Type a message..." />
       <select name="sharedFile"><option value="">— optionally share a file —</option>${fileOptions}</select>
       <button type="submit">Send</button>
     </form>
+    <script>startAutoSync('/api/messages/${friend}', 'chatMessages', m => m.mine);</script>
   `;
   res.send(appPage('Chat', username, 'messages', folders, main, announcementHtml));
+});
+
+app.get('/api/messages/:friend', requireLogin, async (req, res) => {
+  const username = req.session.username;
+  const friend = req.params.friend;
+  const isFriend = await FriendRequest.findOne({ status: 'accepted', $or: [{ from: username, to: friend }, { from: friend, to: username }] });
+  if (!isFriend) return res.json([]);
+  const msgs = await DirectMessage.find({ $or: [{ from: username, to: friend }, { from: friend, to: username }] }).sort({ timestamp: 1 });
+  res.json(msgs.map(m => ({
+    text: m.text || '',
+    fileUrl: m.sharedFile ? `/files/${m.from}/${m.sharedFile}` : null,
+    fileName: m.sharedFile ? m.sharedFile.split('/').pop() : null,
+    mine: m.from === username
+  })));
 });
 
 app.post('/messages/:friend/send', requireLogin, async (req, res) => {
@@ -755,13 +854,23 @@ app.get('/support', requireLogin, async (req, res) => {
   const main = `
     <div class="breadcrumb">Home / Help & Support</div>
     <h1 class="page-title">Help & Support</h1>
-    <div class="card" style="max-width:700px; padding:16px;"><div class="msg-list">${msgsHtml || '<p class="small-link">No messages yet — send one below.</p>'}</div></div>
+    <div class="card" style="max-width:700px; padding:16px;"><div class="msg-list" id="supportMessages">${msgsHtml || '<p class="small-link">No messages yet — send one below.</p>'}</div></div>
     <form method="post" action="/support/send" style="max-width:700px; margin-top:12px;">
       <textarea name="message" rows="3" placeholder="Describe your issue..." required></textarea>
       <button type="submit">Send to Admin</button>
     </form>
+    <script>startAutoSync('/api/support', 'supportMessages', m => m.mine);</script>
   `;
   res.send(appPage('Support', username, 'support', folders, main, announcementHtml));
+});
+
+app.get('/api/support', requireLogin, async (req, res) => {
+  const msgs = await SupportMessage.find({ username: req.session.username }).sort({ timestamp: 1 });
+  res.json(msgs.map(m => ({
+    text: m.message,
+    mine: !m.fromAdmin,
+    label: m.fromAdmin ? '🛡️ Admin:' : null
+  })));
 });
 
 app.post('/support/send', requireLogin, async (req, res) => {
@@ -813,17 +922,29 @@ app.post('/delete-account', requireLogin, async (req, res) => {
 
 // ---------- SECRET Admin Login ----------
 app.get('/admin/login', (req, res) => {
-  res.send(authPage('Admin Login', `
-    <h1>🛡️ Server Admin Access</h1>
-    <form method="post" action="/admin/login">
-      <input name="username" placeholder="Admin username" required />
-      <div class="pw-wrapper">
-        <input id="admin-pw" name="password" type="password" placeholder="Admin password" required />
-        <button type="button" id="admin-pw-eye" class="pw-toggle" onclick="togglePassword('admin-pw')">👁️</button>
-      </div>
-      <button type="submit">Log In</button>
-    </form>
-  `));
+  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin Login — Jisan Server</title>
+  <style>${sharedStyles()}
+    body.admin-login { background:#0b1120; display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px; }
+    .admin-login-card { max-width:380px; width:100%; background:#111827; border:1px solid #1f2937; border-radius:14px; padding:32px; }
+    .admin-login-card h1 { color:#f9fafb; }
+    .admin-login-card input { background:#0b1120; border:1px solid #1f2937; color:#f1f5f9; }
+  </style></head>
+  <body class="admin-login">
+    <div class="admin-login-card">
+      <div class="admin-brand" style="color:#e5e7eb; font-weight:800; margin-bottom:14px;"><span style="width:10px;height:10px;border-radius:50%;background:#38bdf8;display:inline-block;margin-right:8px;"></span>Jisan Server Admin</div>
+      <h1>🛡️ Server Admin Access</h1>
+      <form method="post" action="/admin/login">
+        <input name="username" placeholder="Admin username" required />
+        <div class="pw-wrapper">
+          <input id="admin-pw" name="password" type="password" placeholder="Admin password" required />
+          <button type="button" id="admin-pw-eye" class="pw-toggle" onclick="togglePassword('admin-pw')">👁️</button>
+        </div>
+        <button type="submit">Log In</button>
+      </form>
+    </div>
+    ${clientScript()}
+  </body></html>`);
 });
 
 app.post('/admin/login', (req, res) => {
@@ -846,55 +967,70 @@ app.get('/admin', requireSecretAdmin, async (req, res) => {
   const recentAttempts = await LoginAttempt.find().sort({ timestamp: -1 }).limit(50);
   const openReports = await Report.find({ status: 'open' }).sort({ timestamp: -1 });
   const supportThreads = await SupportMessage.distinct('username');
+  const bannedCount = allUsers.filter(u => u.banned).length;
+  const verifiedCount = allUsers.filter(u => u.verified).length;
 
   const usersHtml = allUsers.map(u => `
-    <div class="settings-row">
-      <span>${u.username} (${u.email}) ${u.banned ? '🚫 banned' : ''}</span>
-      <form method="post" action="/admin/ban" style="display:inline;">
+    <div class="admin-row">
+      <span>${u.username} <span style="color:#6b7280;">(${u.email})</span> ${u.banned ? '<span class="fb-badge red">Banned</span>' : (u.verified ? '<span class="fb-badge green">Verified</span>' : '<span class="fb-badge gray">Unverified</span>')}</span>
+      <form method="post" action="/admin/ban" style="display:inline; width:auto; margin:0;">
         <input type="hidden" name="username" value="${u.username}" />
         <input type="hidden" name="action" value="${u.banned ? 'unban' : 'ban'}" />
-        <button type="submit" class="${u.banned ? '' : 'btn-danger'}" style="width:auto; padding:6px 12px;">${u.banned ? 'Unban' : 'Ban'}</button>
+        <button type="submit" class="${u.banned ? 'btn-ghost' : 'btn-danger'}">${u.banned ? 'Unban' : 'Ban'}</button>
       </form>
     </div>`).join('');
 
   const attemptsHtml = recentAttempts.map(a => `
-    <div class="settings-row"><span>${a.success ? '✅' : '❌'} ${a.username} — ${a.ip} — ${(a.userAgent || '').slice(0, 60)}</span><b>${new Date(a.timestamp).toLocaleString()}</b></div>`).join('');
+    <div class="admin-row"><span>${a.success ? '✅' : '❌'} <b>${a.username}</b> — ${a.ip} — <span style="color:#6b7280;">${(a.userAgent || '').slice(0, 60)}</span></span><span style="color:#6b7280;">${new Date(a.timestamp).toLocaleString()}</span></div>`).join('');
 
   const reportsHtml = openReports.map(r => `
-    <div class="settings-row"><span>🚩 ${r.reporter} reported ${r.targetUsername}${r.targetFile ? ' (' + r.targetFile + ')' : ''}</span>
-      <form method="post" action="/admin/report-resolve" style="display:inline;">
+    <div class="admin-row"><span>🚩 <b>${r.reporter}</b> reported <b>${r.targetUsername}</b>${r.targetFile ? ' (' + r.targetFile + ')' : ''}</span>
+      <form method="post" action="/admin/report-resolve" style="display:inline; width:auto; margin:0;">
         <input type="hidden" name="id" value="${r._id}" />
-        <button type="submit" style="width:auto; padding:6px 12px;">Mark Reviewed</button>
+        <button type="submit" class="btn-ghost">Mark Reviewed</button>
       </form></div>`).join('');
 
-  const supportHtml = supportThreads.map(u => `<div class="settings-row"><span>💬 ${u}</span><a href="/admin/support/${u}">Open thread →</a></div>`).join('');
+  const supportHtml = supportThreads.map(u => `<div class="admin-row"><span>💬 ${u}</span><a href="/admin/support/${u}">Open thread →</a></div>`).join('');
 
   const body = `
-    <div class="card" style="max-width:900px; margin: 0 auto;">
-      <div class="brand"><span class="brand-dot"></span><span class="brand-name">JISAN SERVER — ADMIN</span></div>
-      <div style="text-align:right; margin-bottom:10px;"><a href="/admin/logout">Log out of admin</a></div>
+    <div class="stat-grid">
+      <div class="stat-card"><div class="num">${allUsers.length}</div><div class="label">Total Users</div></div>
+      <div class="stat-card"><div class="num">${verifiedCount}</div><div class="label">Verified</div></div>
+      <div class="stat-card"><div class="num">${bannedCount}</div><div class="label">Banned</div></div>
+      <div class="stat-card"><div class="num">${openReports.length}</div><div class="label">Open Reports</div></div>
+      <div class="stat-card"><div class="num">${supportThreads.length}</div><div class="label">Support Threads</div></div>
+    </div>
 
-      <h3>Post a Notice to All Users</h3>
+    <div class="admin-section">
+      <h3>📢 Post a Notice to All Users</h3>
       <form method="post" action="/admin/announce">
         <textarea name="message" rows="2" placeholder="Notice text..." required></textarea>
         <button type="submit">Post Notice</button>
       </form>
+    </div>
 
-      <h3 style="margin-top:22px;">Open Reports (${openReports.length})</h3>
+    <div class="admin-section">
+      <h3>🚩 Open Reports (${openReports.length})</h3>
       ${reportsHtml || '<p class="small-link">No open reports.</p>'}
+    </div>
 
-      <h3 style="margin-top:22px;">All Users (${allUsers.length})</h3>
+    <div class="admin-section">
+      <h3>👤 All Users (${allUsers.length})</h3>
       ${usersHtml}
+    </div>
 
-      <h3 style="margin-top:22px;">Login Activity — Devices & IPs</h3>
+    <div class="admin-section">
+      <h3>🔐 Login Activity — Devices &amp; IPs</h3>
       ${attemptsHtml || '<p class="small-link">No activity yet.</p>'}
+    </div>
 
-      <h3 style="margin-top:22px;">Support Threads</h3>
+    <div class="admin-section">
+      <h3>🆘 Support Threads</h3>
       ${supportHtml || '<p class="small-link">None yet.</p>'}
     </div>
   `;
 
-  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Admin — Jisan Server</title><style>${sharedStyles()}</style></head><body>${body}${clientScript()}</body></html>`);
+  res.send(adminPage('Admin Dashboard', body));
 });
 
 app.post('/admin/announce', requireSecretAdmin, async (req, res) => {
@@ -919,17 +1055,27 @@ app.get('/admin/support/:username', requireSecretAdmin, async (req, res) => {
   const msgsHtml = msgs.map(m => `<div class="msg-bubble ${m.fromAdmin ? 'msg-mine' : 'msg-theirs'}">${m.fromAdmin ? 'You: ' : targetUser + ': '}${m.message}</div>`).join('');
 
   const body = `
-    <div class="card" style="max-width:700px; margin:0 auto;">
-      <div class="brand"><span class="brand-dot"></span><span class="brand-name">JISAN SERVER — ADMIN</span></div>
-      <div class="breadcrumb"><a href="/admin">Admin</a> / Support: ${targetUser}</div>
-      <h1 class="page-title">Support thread with ${targetUser}</h1>
-      <div class="msg-list">${msgsHtml}</div>
+    <div class="admin-section">
+      <div class="breadcrumb" style="color:#9ca3af;"><a href="/admin">Admin</a> / Support: ${targetUser}</div>
+      <h1 class="page-title" style="color:#f9fafb;">Support thread with ${targetUser}</h1>
+      <div class="msg-list" id="adminSupportMessages" style="padding:14px;">${msgsHtml || '<p class="small-link">No messages yet.</p>'}</div>
       <form method="post" action="/admin/support/${targetUser}/reply">
         <input name="message" placeholder="Type your reply..." required />
         <button type="submit">Reply</button>
       </form>
-    </div>`;
-  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Support — Admin</title><style>${sharedStyles()}</style></head><body>${body}${clientScript()}</body></html>`);
+    </div>
+    <script>startAutoSync('/api/admin/support/${targetUser}', 'adminSupportMessages', m => m.mine);</script>`;
+  res.send(adminPage(`Support — ${targetUser}`, body, '/admin'));
+});
+
+app.get('/api/admin/support/:username', requireSecretAdmin, async (req, res) => {
+  const targetUser = req.params.username;
+  const msgs = await SupportMessage.find({ username: targetUser }).sort({ timestamp: 1 });
+  res.json(msgs.map(m => ({
+    text: m.message,
+    mine: m.fromAdmin,
+    label: m.fromAdmin ? 'You:' : targetUser + ':'
+  })));
 });
 
 app.post('/admin/support/:username/reply', requireSecretAdmin, async (req, res) => {
