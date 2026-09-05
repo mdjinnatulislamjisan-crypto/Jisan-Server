@@ -29,7 +29,8 @@ const userSchema = new mongoose.Schema({
   verified: { type: Boolean, default: false },
   verifyToken: String,
   banned: { type: Boolean, default: false },
-  banReason: String
+  banReason: String,
+  approved: { type: Boolean, default: false }
 });
 const User = mongoose.model('User', userSchema);
 
@@ -107,26 +108,32 @@ app.use(session({
   saveUninitialized: false
 }));
 
-// ---------- Shared styles (Facebook-inspired light theme) ----------
+// ---------- Shared styles (Facebook-style layout, colorful animated background) ----------
 function sharedStyles() {
   return `
     * { box-sizing: border-box; }
     html, body { margin:0; min-height:100%; font-family:'Segoe UI', Helvetica, Arial, sans-serif; color:#1c1e21; }
-    body { background:#f0f2f5; min-height:100vh; }
+    body {
+      min-height:100vh;
+      background: linear-gradient(-45deg, #4f46e5, #0ea5e9, #a855f7, #f43f5e, #f59e0b, #10b981);
+      background-size: 400% 400%; animation: gradientMove 20s ease infinite;
+    }
+    @keyframes gradientMove { 0%{background-position:0% 50%;} 50%{background-position:100% 50%;} 100%{background-position:0% 50%;} }
     a { color:#1877f2; text-decoration:none; }
     a:hover { text-decoration:underline; }
     h1 { font-size:22px; margin-top:0; color:#050505; }
     h3 { color:#65676b; margin-bottom:8px; font-size:15px; }
-    .card { background:#fff; border-radius:12px; padding:24px 26px; box-shadow:0 1px 2px rgba(0,0,0,0.1); border:1px solid #dadde1; }
+    .card { background:rgba(255,255,255,0.92); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      border-radius:14px; padding:24px 26px; box-shadow:0 6px 24px rgba(0,0,0,0.18); border:1px solid rgba(255,255,255,0.4); }
     .brand { display:flex; align-items:center; gap:10px; margin-bottom:18px; }
     .brand-dot { width:12px; height:12px; border-radius:50%; background:#1877f2; }
     .brand-name { font-weight:800; letter-spacing:0.3px; color:#1877f2; font-size:20px; }
     input, select, button, textarea { width:100%; padding:11px 14px; margin:6px 0 14px 0; border-radius:8px;
       border:1px solid #ccd0d5; background:#f5f6f7; color:#1c1e21; font-size:14px; font-family:inherit; }
     input:focus, select:focus, textarea:focus { outline:none; border-color:#1877f2; background:#fff; box-shadow:0 0 0 3px rgba(24,119,242,0.15); }
-    button { background:#1877f2; color:#fff; font-weight:700; border:none; cursor:pointer; transition:0.15s; }
-    button:hover { background:#166fe5; }
-    .btn-danger { background:#fa383e !important; color:#fff !important; }
+    button { background: linear-gradient(135deg,#1877f2,#a855f7); color:#fff; font-weight:700; border:none; cursor:pointer; transition:0.15s; }
+    button:hover { filter:brightness(1.08); transform:translateY(-1px); }
+    .btn-danger { background: linear-gradient(135deg,#fb7185,#dc2626) !important; color:#fff !important; }
     .btn-ghost { background:#e4e6eb !important; color:#050505 !important; }
     .btn-ghost:hover { background:#d8dadf !important; }
     .small-link { font-size:13px; color:#65676b; }
@@ -135,8 +142,8 @@ function sharedStyles() {
     .pw-wrapper input { padding-right:42px; }
     .pw-toggle { position:absolute; right:10px; top:8px; cursor:pointer; background:none !important; border:none; width:auto; padding:0; margin:0; font-size:16px; color:#65676b; }
     .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap:14px; }
-    .file-card { background:#fff; border:1px solid #dadde1; border-radius:10px; padding:0; text-align:center; transition:0.15s; overflow:hidden; position:relative; }
-    .file-card:hover { box-shadow:0 2px 8px rgba(0,0,0,0.15); transform:translateY(-2px); }
+    .file-card { background:#fff; border:1px solid #ecebf0; border-radius:10px; padding:0; text-align:center; transition:0.15s; overflow:hidden; position:relative; }
+    .file-card:hover { box-shadow:0 4px 16px rgba(0,0,0,0.2); transform:translateY(-2px); }
     .thumb-wrap { position:relative; width:100%; height:130px; background:#f0f2f5; overflow:hidden; }
     .thumb { width:100%; height:130px; object-fit:cover; display:block; }
     .filetype { display:flex; align-items:center; justify-content:center; height:130px; color:#65676b; font-weight:700; font-size:13px; background:#f0f2f5; }
@@ -145,22 +152,27 @@ function sharedStyles() {
     .file-card:hover .card-overlay { opacity:1; }
     .overlay-btn { width:auto; padding:6px 9px; margin:0; font-size:11px; border-radius:8px; text-decoration:none; }
     .filename { font-size:12px; color:#65676b; margin:8px 10px 10px 10px; word-break:break-word; }
-    .folder-card { background:#fff; border:1px solid #dadde1; border-radius:12px; padding:20px; text-align:center; transition:0.15s; display:block; }
-    .folder-card:hover { box-shadow:0 2px 8px rgba(0,0,0,0.15); transform:translateY(-2px); text-decoration:none; }
+    .folder-card { background:#fff; border:1px solid #ecebf0; border-radius:12px; padding:20px; text-align:center; transition:0.15s; display:block; }
+    .folder-card:hover { box-shadow:0 4px 16px rgba(0,0,0,0.2); transform:translateY(-2px); text-decoration:none; }
     .folder-icon { font-size:34px; margin-bottom:8px; }
     .folder-name { font-size:14px; color:#050505; font-weight:600; word-break:break-word; }
-    .settings-row { display:flex; justify-content:space-between; align-items:center; padding:14px 0; border-bottom:1px solid #e4e6eb; gap:12px; flex-wrap:wrap; }
+    .settings-row { display:flex; justify-content:space-between; align-items:center; padding:14px 0; border-bottom:1px solid #ecebf0; gap:12px; flex-wrap:wrap; }
     .settings-row:last-child { border-bottom:none; }
-    .announcement-banner { background:#e7f3ff; border:1px solid #cfe3ff; border-radius:10px; padding:14px 18px; margin-bottom:18px; font-size:14px; color:#0a58ca; }
+    .announcement-banner { background: linear-gradient(90deg, #fef3c7, #dbeafe); border:1px solid #fde68a; border-radius:10px; padding:14px 18px; margin-bottom:18px; font-size:14px; color:#92400e; }
     .msg-bubble { max-width:75%; padding:9px 14px; border-radius:16px; margin-bottom:8px; font-size:14px; }
-    .msg-mine { background:#1877f2; color:#fff; margin-left:auto; border-bottom-right-radius:4px; }
+    .msg-mine { background: linear-gradient(135deg,#1877f2,#6366f1); color:#fff; margin-left:auto; border-bottom-right-radius:4px; }
     .msg-theirs { background:#e4e6eb; color:#050505; border-bottom-left-radius:4px; }
     .msg-list { display:flex; flex-direction:column; max-height:420px; overflow-y:auto; padding:10px; }
     .fb-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; }
-    .fb-badge.green { background:#e3f6e9; color:#1a7f3c; }
-    .fb-badge.red { background:#fde8e8; color:#c0262b; }
+    .fb-badge.green { background:#dcfce7; color:#15803d; }
+    .fb-badge.red { background:#fee2e2; color:#b91c1c; }
     .fb-badge.gray { background:#e4e6eb; color:#65676b; }
-    .fb-badge.blue { background:#e7f3ff; color:#1877f2; }
+    .fb-badge.blue { background:#dbeafe; color:#1d4ed8; }
+    .bg-orb { position:fixed; border-radius:50%; filter:blur(60px); opacity:0.5; z-index:0; pointer-events:none; animation: floatOrb 16s ease-in-out infinite; mix-blend-mode: screen; }
+    .orb1 { width:340px; height:340px; background:#fbbf24; top:-90px; left:-90px; animation-duration:18s; }
+    .orb2 { width:280px; height:280px; background:#ec4899; bottom:-90px; right:-70px; animation-duration:21s; animation-delay:2s; }
+    .orb3 { width:220px; height:220px; background:#22d3ee; top:40%; right:6%; animation-duration:25s; animation-delay:4s; }
+    @keyframes floatOrb { 0%,100%{transform:translateY(0) translateX(0);} 50%{transform:translateY(-34px) translateX(26px);} }
   `;
 }
 function clientScript() {
@@ -212,7 +224,8 @@ function authPage(title, body) {
     .auth-card { max-width: 400px; width: 100%; }
   </style></head>
   <body class="auth">
-    <div class="card auth-card">
+    <div class="bg-orb orb1"></div><div class="bg-orb orb2"></div><div class="bg-orb orb3"></div>
+    <div class="card auth-card" style="position:relative; z-index:1;">
       <div class="brand"><span class="brand-dot"></span><span class="brand-name">Jisan Server</span></div>
       ${body}
     </div>
@@ -269,7 +282,8 @@ function appPage(title, username, activeKey, folders, mainContent, announcementH
     }
   </style></head>
   <body class="dash">
-    <div class="topbar">
+    <div class="bg-orb orb1"></div><div class="bg-orb orb2"></div><div class="bg-orb orb3"></div>
+    <div class="topbar" style="position:sticky; background:rgba(255,255,255,0.85); backdrop-filter:blur(10px); z-index:60;">
       <div class="topbar-left">
         <span class="topbar-logo">Jisan Server</span>
         <span class="topbar-search">🔍 Search Jisan Server</span>
@@ -282,7 +296,7 @@ function appPage(title, username, activeKey, folders, mainContent, announcementH
         <div class="avatar">${username.charAt(0).toUpperCase()}</div>
       </div>
     </div>
-    <div class="shell">
+    <div class="shell" style="position:relative; z-index:1;">
       <aside class="sidebar">
         <div class="card" style="padding:8px;">
           <a href="/" class="user-chip" style="text-decoration:none;">
@@ -345,9 +359,18 @@ function adminPage(title, body, backLink) {
     ${clientScript()}
   </body></html>`;
 }
-function requireLogin(req, res, next) {
+async function requireLogin(req, res, next) {
   if (!req.session.username) return res.redirect('/login');
-  next();
+  try {
+    const user = await User.findOne({ username: req.session.username });
+    if (!user) { return req.session.destroy(() => res.redirect('/login')); }
+    if (user.banned) { return req.session.destroy(() => res.redirect('/login?msg=banned')); }
+    if (!user.approved) { return req.session.destroy(() => res.redirect('/login?msg=pending')); }
+    next();
+  } catch (e) {
+    console.error('requireLogin check failed:', e.message);
+    next(); // don't lock everyone out over a transient DB hiccup
+  }
 }
 function requireSecretAdmin(req, res, next) {
   if (!req.session.isSecretAdmin) return res.redirect('/admin/login');
@@ -433,7 +456,7 @@ app.get('/verify-email', async (req, res) => {
   user.verified = true;
   user.verifyToken = undefined;
   await user.save();
-  res.send(authPage('Verified', `<h1>Email verified!</h1><p><a href="/login">Log in now</a></p>`));
+  res.send(authPage('Verified', `<h1>Email verified!</h1><p>Your email is confirmed. Your account now needs a quick approval from the admin before you can log in — this usually doesn't take long.</p><p><a href="/login">Back to login</a></p>`));
 });
 
 app.get('/resend-verification', (req, res) => {
@@ -466,8 +489,12 @@ app.post('/resend-verification', async (req, res) => {
 
 // ---------- Login / Logout ----------
 app.get('/login', (req, res) => {
+  let notice = '';
+  if (req.query.msg === 'banned') notice = `<p class="hint-text" style="color:#c0262b;">🚫 Your account has been banned.</p>`;
+  if (req.query.msg === 'pending') notice = `<p class="hint-text">⏳ Your account is awaiting admin approval before you can log in.</p>`;
   res.send(authPage('Login', `
     <h1>Log in to Jisan Server</h1>
+    ${notice}
     <form method="post" action="/login">
       <input name="username" placeholder="Username" required />
       <div class="pw-wrapper">
@@ -503,6 +530,10 @@ app.post('/login', async (req, res) => {
     return res.send('Wrong username or password. <a href="/login">Try again</a>');
   }
   if (!user.verified) return res.send('Please verify your email first. <a href="/resend-verification">Resend email</a>');
+  if (!user.approved) {
+    await LoginAttempt.create({ username: clean, success: false, ip, userAgent });
+    return res.send('Your account is verified but is still waiting for admin approval. Please check back soon. <a href="/login">Back</a>');
+  }
 
   await LoginAttempt.create({ username: clean, success: true, ip, userAgent });
   req.session.username = clean;
@@ -969,10 +1000,20 @@ app.get('/admin', requireSecretAdmin, async (req, res) => {
   const supportThreads = await SupportMessage.distinct('username');
   const bannedCount = allUsers.filter(u => u.banned).length;
   const verifiedCount = allUsers.filter(u => u.verified).length;
+  const pendingApprovals = allUsers.filter(u => u.verified && !u.approved && !u.banned);
+
+  const pendingHtml = pendingApprovals.map(u => `
+    <div class="admin-row">
+      <span>⏳ ${u.username} <span style="color:#6b7280;">(${u.email})</span></span>
+      <form method="post" action="/admin/approve" style="display:inline; width:auto; margin:0;">
+        <input type="hidden" name="username" value="${u.username}" />
+        <button type="submit">Approve</button>
+      </form>
+    </div>`).join('');
 
   const usersHtml = allUsers.map(u => `
     <div class="admin-row">
-      <span>${u.username} <span style="color:#6b7280;">(${u.email})</span> ${u.banned ? '<span class="fb-badge red">Banned</span>' : (u.verified ? '<span class="fb-badge green">Verified</span>' : '<span class="fb-badge gray">Unverified</span>')}</span>
+      <span>${u.username} <span style="color:#6b7280;">(${u.email})</span> ${u.banned ? '<span class="fb-badge red">Banned</span>' : (!u.verified ? '<span class="fb-badge gray">Unverified</span>' : (!u.approved ? '<span class="fb-badge blue">Pending Approval</span>' : '<span class="fb-badge green">Active</span>'))}</span>
       <form method="post" action="/admin/ban" style="display:inline; width:auto; margin:0;">
         <input type="hidden" name="username" value="${u.username}" />
         <input type="hidden" name="action" value="${u.banned ? 'unban' : 'ban'}" />
@@ -996,6 +1037,7 @@ app.get('/admin', requireSecretAdmin, async (req, res) => {
     <div class="stat-grid">
       <div class="stat-card"><div class="num">${allUsers.length}</div><div class="label">Total Users</div></div>
       <div class="stat-card"><div class="num">${verifiedCount}</div><div class="label">Verified</div></div>
+      <div class="stat-card"><div class="num">${pendingApprovals.length}</div><div class="label">Awaiting Approval</div></div>
       <div class="stat-card"><div class="num">${bannedCount}</div><div class="label">Banned</div></div>
       <div class="stat-card"><div class="num">${openReports.length}</div><div class="label">Open Reports</div></div>
       <div class="stat-card"><div class="num">${supportThreads.length}</div><div class="label">Support Threads</div></div>
@@ -1007,6 +1049,11 @@ app.get('/admin', requireSecretAdmin, async (req, res) => {
         <textarea name="message" rows="2" placeholder="Notice text..." required></textarea>
         <button type="submit">Post Notice</button>
       </form>
+    </div>
+
+    <div class="admin-section">
+      <h3>⏳ Awaiting Approval (${pendingApprovals.length})</h3>
+      ${pendingHtml || '<p class="small-link">Nobody is waiting right now.</p>'}
     </div>
 
     <div class="admin-section">
@@ -1031,6 +1078,11 @@ app.get('/admin', requireSecretAdmin, async (req, res) => {
   `;
 
   res.send(adminPage('Admin Dashboard', body));
+});
+
+app.post('/admin/approve', requireSecretAdmin, async (req, res) => {
+  await User.updateOne({ username: req.body.username }, { approved: true });
+  res.redirect('/admin');
 });
 
 app.post('/admin/announce', requireSecretAdmin, async (req, res) => {
