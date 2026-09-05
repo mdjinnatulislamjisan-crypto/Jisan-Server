@@ -32,6 +32,13 @@ const userSchema = new mongoose.Schema({
   verified: { type: Boolean, default: false },
   verifyToken: String
 });
+const loginAttemptSchema = new mongoose.Schema({
+  username: String,
+  success: Boolean,
+  ip: String,
+  timestamp: { type: Date, default: Date.now }
+});
+const LoginAttempt = mongoose.model('LoginAttempt', loginAttemptSchema);
 const User = mongoose.model('User', userSchema);
 
 // ---------- Mailjet ----------
@@ -453,11 +460,23 @@ app.get('/login', (req, res) => {
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   const clean = (username || '').trim().toLowerCase();
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
   const user = await User.findOne({ username: clean });
-  if (!user) return res.send('Wrong username or password. <a href="/login">Try again</a>');
+  if (!user) {
+    await LoginAttempt.create({ username: clean, success: false, ip });
+    return res.send('Wrong username or password. <a href="/login">Try again</a>');
+  }
   const match = await bcrypt.compare(password, user.password);
-  if (!match) return res.send('Wrong username or password. <a href="/login">Try again</a>');
-  if (!user.verified) return res.send('Please verify your email before logging in. <a href="/resend-verification">Resend email</a>');
+  if (!match) {
+    await LoginAttempt.create({ username: clean, success: false, ip });
+    return res.send('Wrong username or password. <a href="/login">Try again</a>');
+  }
+  if (!user.verified) {
+    return res.send('Please verify your email before logging in. <a href="/resend-verification">Resend email</a>');
+  }
+
+  await LoginAttempt.create({ username: clean, success: true, ip });
   req.session.username = clean;
   res.redirect('/');
 });
@@ -654,6 +673,14 @@ app.get('/settings', requireLogin, async (req, res) => {
   const username = req.session.username;
   const folders = getFolders(username);
   const user = await User.findOne({ username });
+  const attempts = await LoginAttempt.find({ username }).sort({ timestamp: -1 }).limit(10);
+
+  const attemptsHtml = attempts.map(a => `
+    <div class="settings-row">
+      <span>${a.success ? '✅ Successful' : '❌ Failed'} — ${a.ip || 'unknown IP'}</span>
+      <b>${new Date(a.timestamp).toLocaleString()}</b>
+    </div>
+  `).join('');
 
   const main = `
     <div class="breadcrumb">Home / Settings</div>
@@ -664,6 +691,10 @@ app.get('/settings', requireLogin, async (req, res) => {
       <div class="settings-row"><span>Account status</span><b>${user.verified ? '✅ Verified' : '⏳ Not verified'}</b></div>
       <div class="settings-row"><span>Total folders</span><b>${folders.length}</b></div>
       <div class="settings-row"><span>Total files</span><b>${countAllFiles(username)}</b></div>
+    </div>
+    <h3 style="margin-top:26px;">Recent Login Attempts</h3>
+    <div class="card" style="max-width:600px; padding:24px 28px;">
+      ${attemptsHtml || '<p class="small-link">No login attempts recorded yet.</p>'}
     </div>
     <h3 style="margin-top:26px;">Change Password</h3>
     <div class="card" style="max-width:600px; padding:24px 28px;">
