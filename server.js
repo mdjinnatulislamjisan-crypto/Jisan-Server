@@ -1,6 +1,5 @@
 const express = require('express');
 const multer = require('multer');
-const fs = require('fs');
 const path = require('path');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
@@ -19,8 +18,12 @@ const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
 // ---------- MongoDB connection ----------
+let gridBucket;
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB connected'))
+  .then(() => {
+    console.log('MongoDB connected');
+    gridBucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'uploads' });
+  })
   .catch(err => console.error('MongoDB connection error:', err.message));
 
 const userSchema = new mongoose.Schema({
@@ -30,7 +33,8 @@ const userSchema = new mongoose.Schema({
   securityQuestion: String,
   securityAnswer: String,
   verified: { type: Boolean, default: false },
-  verifyToken: String
+  verifyToken: String,
+  banned: { type: Boolean, default: false }
 });
 const loginAttemptSchema = new mongoose.Schema({
   username: String,
@@ -38,8 +42,29 @@ const loginAttemptSchema = new mongoose.Schema({
   ip: String,
   timestamp: { type: Date, default: Date.now }
 });
+// Files are stored in MongoDB itself (GridFS) so they survive redeploys,
+// the same way your accounts already do — Render's disk is wiped on every deploy, MongoDB isn't.
+const fileMetaSchema = new mongoose.Schema({
+  username: { type: String, required: true, index: true },
+  folder: { type: String, required: true },
+  filename: { type: String, required: true },
+  originalName: { type: String, required: true },
+  contentType: String,
+  size: Number,
+  gridId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  uploadedAt: { type: Date, default: Date.now }
+});
+const folderSchema = new mongoose.Schema({
+  username: { type: String, required: true, index: true },
+  name: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now }
+});
+folderSchema.index({ username: 1, name: 1 }, { unique: true });
+
 const LoginAttempt = mongoose.model('LoginAttempt', loginAttemptSchema);
 const User = mongoose.model('User', userSchema);
+const FileMeta = mongoose.model('FileMeta', fileMetaSchema);
+const Folder = mongoose.model('Folder', folderSchema);
 
 // ---------- Mailjet ----------
 const mailjet = Mailjet.apiConnect(process.env.MAILJET_API_KEY, process.env.MAILJET_SECRET_KEY);
@@ -53,10 +78,6 @@ async function sendEmail(toEmail, subject, html) {
     }]
   });
 }
-
-// ---------- File storage dir (local, still ephemeral on Render) ----------
-const DATA_DIR = path.join(__dirname, 'my-files');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -180,6 +201,47 @@ function clientScript() {
   </script>`;
 }
 
+// ---------- Logo (inline SVG "JS" mark — used as favicon and brand mark, no image file needed) ----------
+function logoSvg(size) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;display:block;">
+    <defs><linearGradient id="jsLogoGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#a855f7"/>
+    </linearGradient></defs>
+    <rect width="64" height="64" rx="16" fill="url(#jsLogoGrad)"/>
+    <text x="32" y="43" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="800" fill="white" text-anchor="middle">JS</text>
+  </svg>`;
+}
+function faviconTag() {
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%2338bdf8'/><stop offset='1' stop-color='%23a855f7'/></linearGradient></defs><rect width='64' height='64' rx='16' fill='url(%23g)'/><text x='32' y='43' font-family='Arial,Helvetica,sans-serif' font-size='26' font-weight='800' fill='white' text-anchor='middle'>JS</text></svg>`;
+  return `<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,${svg}">`;
+}
+
+// ---------- Admin page wrapper ----------
+function adminPage(title, body) {
+  return `<!DOCTYPE html>
+  <html><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${title} — Jisan Server Admin</title>
+  ${faviconTag()}
+  <style>${sharedStyles()}
+    body.admin { padding:40px 20px; align-items:flex-start; justify-content:center; }
+    .admin-wrap { position:relative; z-index:1; max-width: 1000px; width:100%; margin: 0 auto; }
+    table.admin-table { width:100%; border-collapse:collapse; font-size:13px; }
+    table.admin-table th { text-align:left; padding:10px 12px; color:#94a3b8; font-weight:600; border-bottom:1px solid rgba(148,163,184,0.2); }
+    table.admin-table td { padding:10px 12px; border-bottom:1px solid rgba(148,163,184,0.1); vertical-align:middle; }
+    .ban-btn { width:auto !important; padding:6px 14px !important; margin:0 !important; font-size:12px !important; border-radius:8px !important; }
+    .ban-btn.unban { background: linear-gradient(135deg,#22c55e,#16a34a) !important; }
+    .ban-btn.ban { background: linear-gradient(135deg,#ef4444,#b91c1c) !important; }
+  </style></head>
+  <body class="admin">
+    <div class="bg-orb orb1"></div><div class="bg-orb orb2"></div><div class="bg-orb orb3"></div>
+    <div class="admin-wrap">
+      <div class="brand">${logoSvg(30)}<span class="brand-name">JISAN SERVER · ADMIN</span></div>
+      ${body}
+    </div>
+    ${clientScript()}
+  </body></html>`;
+}
+
 // ---------- Auth-page wrapper ----------
 function authPage(title, body) {
   const icons = ['📚', '✏️', '📐', '🖊️', '🎓', '📖', '🧮', '📝', '🔬', '💡', '📁', '🖼️'];
@@ -194,6 +256,7 @@ function authPage(title, body) {
   return `<!DOCTYPE html>
   <html><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${title} — Jisan Server</title>
+  ${faviconTag()}
   <style>${sharedStyles()}
     body.auth { display:flex; justify-content:center; align-items:center; }
     .auth-card { max-width: 430px; width: 100%; }
@@ -202,7 +265,7 @@ function authPage(title, body) {
     <div class="study-bg">${floating}</div>
     <div class="bg-orb orb1"></div><div class="bg-orb orb2"></div><div class="bg-orb orb3"></div>
     <div class="card auth-card">
-      <div class="brand"><span class="brand-dot"></span><span class="brand-name">JISAN SERVER</span></div>
+      <div class="brand">${logoSvg(30)}<span class="brand-name">JISAN SERVER</span></div>
       ${body}
     </div>
     ${clientScript()}
@@ -219,6 +282,7 @@ function appPage(title, username, activeKey, folders, mainContent) {
   return `<!DOCTYPE html>
   <html><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${title} — Jisan Server</title>
+  ${faviconTag()}
   <style>${sharedStyles()}
     body.dash { display:block; padding:0; align-items:initial; justify-content:initial; }
     .shell { position:relative; z-index:1; display:flex; min-height:100vh; }
@@ -269,7 +333,7 @@ function appPage(title, username, activeKey, folders, mainContent) {
     <div class="bg-orb orb1"></div><div class="bg-orb orb2"></div><div class="bg-orb orb3"></div>
     <div class="shell">
       <aside class="sidebar">
-        <div class="brand"><span class="brand-dot"></span><span class="brand-name">JISAN SERVER</span></div>
+        <div class="brand">${logoSvg(28)}<span class="brand-name">JISAN SERVER</span></div>
         <div class="user-chip">
           <div class="avatar">${username.charAt(0).toUpperCase()}</div>
           <div>
@@ -302,22 +366,22 @@ function requireLogin(req, res, next) {
   if (!req.session.username) return res.redirect('/login');
   next();
 }
-function userDir(username) {
-  const dir = path.join(DATA_DIR, username);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  return dir;
+function requireAdmin(req, res, next) {
+  if (!req.session.isAdmin) return res.redirect('/admin/login');
+  next();
 }
-function getFolders(username) {
-  const dir = userDir(username);
-  return fs.readdirSync(dir).filter(f => fs.statSync(path.join(dir, f)).isDirectory());
+// Folders come from two places merged together: folders explicitly created
+// (even if still empty) and folder names that already have files in them.
+async function getFolders(username) {
+  const [folderDocs, fileFolders] = await Promise.all([
+    Folder.find({ username }).select('name -_id'),
+    FileMeta.distinct('folder', { username })
+  ]);
+  const set = new Set([...folderDocs.map(f => f.name), ...fileFolders]);
+  return Array.from(set).sort();
 }
-function countAllFiles(username) {
-  const folders = getFolders(username);
-  let count = 0;
-  folders.forEach(f => {
-    count += fs.readdirSync(path.join(userDir(username), f)).length;
-  });
-  return count;
+async function countAllFiles(username) {
+  return FileMeta.countDocuments({ username });
 }
 
 // ---------- Register ----------
@@ -364,7 +428,6 @@ app.post('/register', async (req, res) => {
       verified: false, verifyToken
     });
     await newUser.save();
-    userDir(clean);
 
     const verifyLink = `${BASE_URL}/verify-email?token=${verifyToken}`;
     try {
@@ -475,6 +538,10 @@ app.post('/login', async (req, res) => {
   if (!user.verified) {
     return res.send('Please verify your email before logging in. <a href="/resend-verification">Resend email</a>');
   }
+  if (user.banned) {
+    await LoginAttempt.create({ username: clean, success: false, ip });
+    return res.send('This account has been suspended. <a href="/login">Back</a>');
+  }
 
   await LoginAttempt.create({ username: clean, success: true, ip });
   req.session.username = clean;
@@ -528,21 +595,13 @@ app.post('/forgot-password/reset', async (req, res) => {
   res.send('Password reset successfully! <a href="/login">Log in now</a>');
 });
 
-// ---------- File storage ----------
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const folder = (req.body.folder || 'general').replace(/[^a-zA-Z0-9_-]/g, '');
-    const dest = path.join(userDir(req.session.username), folder);
-    if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
-    cb(null, dest);
-  },
-  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
-});
-const upload = multer({ storage });
+// ---------- File storage (MongoDB GridFS — persists across redeploys) ----------
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB cap
 
-function fileCardHtml(folder, f) {
-  const ext = path.extname(f).toLowerCase();
-  const url = `/files/${folder}/${encodeURIComponent(f)}`;
+function fileCardHtml(fileDoc) {
+  const displayName = fileDoc.originalName || fileDoc.filename;
+  const ext = path.extname(displayName).toLowerCase();
+  const url = `/files/${encodeURIComponent(fileDoc.folder)}/${encodeURIComponent(fileDoc.filename)}`;
   let preview = '';
   if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) preview = `<img src="${url}" class="thumb" loading="lazy" />`;
   else if (['.mp4', '.webm', '.mov'].includes(ext)) preview = `<video src="${url}" class="thumb" muted></video>`;
@@ -550,7 +609,7 @@ function fileCardHtml(folder, f) {
   else preview = `<div class="filetype">${ext.replace('.', '').toUpperCase() || 'FILE'}</div>`;
 
   const viewBtn = ext === '.pdf'
-    ? `<a href="/view/${folder}/${encodeURIComponent(f)}" class="overlay-btn" style="background:#38bdf8;color:#0b1120;border-radius:8px;padding:6px 10px;text-decoration:none;">Read</a>`
+    ? `<a href="/view/${encodeURIComponent(fileDoc.folder)}/${encodeURIComponent(fileDoc.filename)}" class="overlay-btn" style="background:#38bdf8;color:#0b1120;border-radius:8px;padding:6px 10px;text-decoration:none;">Read</a>`
     : '';
 
   return `<div class="file-card">
@@ -560,16 +619,16 @@ function fileCardHtml(folder, f) {
         <a href="${url}" download class="overlay-btn" style="background:#1e293b;color:#e2e8f0;border-radius:8px;padding:6px 10px;text-decoration:none;">⬇</a>
       </div>
     </div>
-    <p class="filename">${f}</p>
+    <p class="filename">${displayName}</p>
   </div>`;
 }
 
 // ---------- Dashboard ----------
-app.get('/', requireLogin, (req, res) => {
+app.get('/', requireLogin, async (req, res) => {
   const username = req.session.username;
-  const folders = getFolders(username);
+  const folders = await getFolders(username);
   const folderOptions = folders.map(f => `<option value="${f}">${f}</option>`).join('');
-  const fileCount = countAllFiles(username);
+  const fileCount = await countAllFiles(username);
 
   const folderCards = folders.map(f => `
     <a href="/folder/${encodeURIComponent(f)}" class="folder-card">
@@ -619,31 +678,63 @@ app.get('/', requireLogin, (req, res) => {
   res.send(appPage('Dashboard', username, 'home', folders, main));
 });
 
-app.post('/create-folder', requireLogin, (req, res) => {
+app.post('/create-folder', requireLogin, async (req, res) => {
   const folder = (req.body.foldername || '').replace(/[^a-zA-Z0-9_-]/g, '');
   if (!folder) return res.send('Invalid folder name. <a href="/">Back</a>');
-  fs.mkdirSync(path.join(userDir(req.session.username), folder), { recursive: true });
+  try {
+    await Folder.updateOne(
+      { username: req.session.username, name: folder },
+      { $setOnInsert: { username: req.session.username, name: folder } },
+      { upsert: true }
+    );
+  } catch (e) { /* folder already exists — fine */ }
   res.redirect('/');
 });
 
-app.post('/upload', requireLogin, upload.single('myfile'), (req, res) => {
-  const folder = (req.body.folder || 'general').replace(/[^a-zA-Z0-9_-]/g, '');
-  res.redirect(`/folder/${encodeURIComponent(folder)}`);
+app.post('/upload', requireLogin, upload.single('myfile'), async (req, res) => {
+  const username = req.session.username;
+  const folder = (req.body.folder || 'general').replace(/[^a-zA-Z0-9_-]/g, '') || 'general';
+  if (!req.file) return res.send('No file received. <a href="/">Back</a>');
+  if (!gridBucket) return res.send('Storage is still starting up — try again in a few seconds. <a href="/">Back</a>');
+
+  const storedName = `${Date.now()}-${req.file.originalname}`;
+  const uploadStream = gridBucket.openUploadStream(storedName, { contentType: req.file.mimetype });
+  uploadStream.end(req.file.buffer);
+
+  uploadStream.on('error', (err) => {
+    console.error('GridFS upload error:', err.message);
+    res.send('Upload failed. <a href="/">Back</a>');
+  });
+  uploadStream.on('finish', async () => {
+    try {
+      await Folder.updateOne(
+        { username, name: folder },
+        { $setOnInsert: { username, name: folder } },
+        { upsert: true }
+      );
+      await FileMeta.create({
+        username, folder, filename: storedName, originalName: req.file.originalname,
+        contentType: req.file.mimetype, size: req.file.size, gridId: uploadStream.id
+      });
+    } catch (e) {
+      console.error('Saving file metadata failed:', e.message);
+    }
+    res.redirect(`/folder/${encodeURIComponent(folder)}`);
+  });
 });
 
 // ---------- Folder view ----------
-app.get('/folder/:folder', requireLogin, (req, res) => {
+app.get('/folder/:folder', requireLogin, async (req, res) => {
   const username = req.session.username;
-  const folders = getFolders(username);
+  const folders = await getFolders(username);
   const folder = req.params.folder;
-  const folderPath = path.join(userDir(username), folder);
 
   if (!folders.includes(folder)) {
     return res.send(appPage('Not found', username, null, folders, `<div class="empty-state"><div class="emoji">🚫</div><p>Folder not found.</p></div>`));
   }
 
-  const files = fs.readdirSync(folderPath);
-  const cards = files.map(f => fileCardHtml(folder, f)).join('');
+  const files = await FileMeta.find({ username, folder }).sort({ uploadedAt: -1 });
+  const cards = files.map(f => fileCardHtml(f)).join('');
 
   const main = `
     <div class="breadcrumb"><a href="/">Home</a> / ${folder}</div>
@@ -671,7 +762,8 @@ app.get('/folder/:folder', requireLogin, (req, res) => {
 // ---------- Advanced settings ----------
 app.get('/settings', requireLogin, async (req, res) => {
   const username = req.session.username;
-  const folders = getFolders(username);
+  const folders = await getFolders(username);
+  const totalFiles = await countAllFiles(username);
   const user = await User.findOne({ username });
   const attempts = await LoginAttempt.find({ username }).sort({ timestamp: -1 }).limit(10);
 
@@ -690,7 +782,7 @@ app.get('/settings', requireLogin, async (req, res) => {
       <div class="settings-row"><span>Email</span><b>${user.email}</b></div>
       <div class="settings-row"><span>Account status</span><b>${user.verified ? '✅ Verified' : '⏳ Not verified'}</b></div>
       <div class="settings-row"><span>Total folders</span><b>${folders.length}</b></div>
-      <div class="settings-row"><span>Total files</span><b>${countAllFiles(username)}</b></div>
+      <div class="settings-row"><span>Total files</span><b>${totalFiles}</b></div>
     </div>
     <h3 style="margin-top:26px;">Recent Login Attempts</h3>
     <div class="card" style="max-width:600px; padding:24px 28px;">
@@ -707,9 +799,9 @@ app.get('/settings', requireLogin, async (req, res) => {
 });
 
 // ---------- PDF reader ----------
-app.get('/view/:folder/:filename', requireLogin, (req, res) => {
+app.get('/view/:folder/:filename', requireLogin, async (req, res) => {
   const username = req.session.username;
-  const folders = getFolders(username);
+  const folders = await getFolders(username);
   const folder = req.params.folder;
   const filename = req.params.filename;
   const url = `/files/${folder}/${encodeURIComponent(filename)}`;
@@ -724,12 +816,91 @@ app.get('/view/:folder/:filename', requireLogin, (req, res) => {
   res.send(appPage(filename, username, 'folder:' + folder, folders, main));
 });
 
-app.get('/files/:folder/:filename', requireLogin, (req, res) => {
-  const base = userDir(req.session.username);
-  const filePath = path.join(base, req.params.folder, req.params.filename);
-  if (!filePath.startsWith(base)) return res.status(403).send('Forbidden');
-  if (!fs.existsSync(filePath)) return res.status(404).send('Not found');
-  res.sendFile(filePath);
+app.get('/files/:folder/:filename', requireLogin, async (req, res) => {
+  const username = req.session.username;
+  const { folder, filename } = req.params;
+  try {
+    const fileDoc = await FileMeta.findOne({ username, folder, filename });
+    if (!fileDoc) return res.status(404).send('Not found');
+    if (!gridBucket) return res.status(503).send('Storage is still starting up, try again shortly.');
+    res.set('Content-Type', fileDoc.contentType || 'application/octet-stream');
+    const downloadStream = gridBucket.openDownloadStream(fileDoc.gridId);
+    downloadStream.on('error', () => { if (!res.headersSent) res.status(404).end(); });
+    downloadStream.pipe(res);
+  } catch (e) {
+    console.error('File retrieval error:', e.message);
+    res.status(500).send('Error retrieving file');
+  }
+});
+
+// ---------- Admin panel (private — only for the site owner) ----------
+app.get('/admin/login', (req, res) => {
+  res.send(authPage('Admin Login', `
+    <h1>Admin Login</h1>
+    <form method="post" action="/admin/login">
+      <input name="username" placeholder="Admin username" required />
+      <div class="pw-wrapper">
+        <input id="admin-pw" name="password" type="password" placeholder="Admin password" required />
+        <button type="button" id="admin-pw-eye" class="pw-toggle" onclick="togglePassword('admin-pw')">👁️</button>
+      </div>
+      <button type="submit">Log In</button>
+    </form>
+    <p class="small-link"><a href="/login">Back to regular login</a></p>
+  `));
+});
+
+app.post('/admin/login', (req, res) => {
+  const { username, password } = req.body;
+  if (username === process.env.ADMIN_USERNAME && password === process.env.ADMIN_PASSWORD) {
+    req.session.isAdmin = true;
+    return res.redirect('/admin');
+  }
+  res.send('Invalid admin credentials. <a href="/admin/login">Try again</a>');
+});
+
+app.get('/admin/logout', (req, res) => {
+  req.session.isAdmin = false;
+  res.redirect('/admin/login');
+});
+
+app.get('/admin', requireAdmin, async (req, res) => {
+  const users = await User.find().sort({ _id: -1 });
+  const rows = await Promise.all(users.map(async u => {
+    const filesCount = await FileMeta.countDocuments({ username: u.username });
+    return `
+    <tr>
+      <td>${u.username}</td>
+      <td>${u.email}</td>
+      <td>${u.verified ? '✅' : '⏳'}</td>
+      <td>${u.banned ? '🚫 Banned' : '✅ Active'}</td>
+      <td>${filesCount}</td>
+      <td>
+        <form method="post" action="/admin/users/${encodeURIComponent(u.username)}/toggle-ban" style="display:inline; margin:0;">
+          <button type="submit" class="ban-btn ${u.banned ? 'unban' : 'ban'}">${u.banned ? 'Unban' : 'Ban'}</button>
+        </form>
+      </td>
+    </tr>`;
+  }));
+
+  const main = `
+    <h1 class="page-title">All Users (${users.length})</h1>
+    <p class="small-link" style="margin-bottom:20px;">Signed in as admin. <a href="/admin/logout">Log out of admin</a></p>
+    <div class="card" style="overflow-x:auto;">
+      <table class="admin-table">
+        <thead><tr>
+          <th>Username</th><th>Email</th><th>Verified</th><th>Status</th><th>Files</th><th>Action</th>
+        </tr></thead>
+        <tbody>${rows.join('') || '<tr><td colspan="6">No users yet.</td></tr>'}</tbody>
+      </table>
+    </div>
+  `;
+  res.send(adminPage('Admin Dashboard', main));
+});
+
+app.post('/admin/users/:username/toggle-ban', requireAdmin, async (req, res) => {
+  const user = await User.findOne({ username: req.params.username });
+  if (user) { user.banned = !user.banned; await user.save(); }
+  res.redirect('/admin');
 });
 
 app.listen(PORT, () => {
