@@ -28,7 +28,6 @@ const userSchema = new mongoose.Schema({
   securityAnswer: String,
   verified: { type: Boolean, default: false },
   verifyToken: String,
-  isAdmin: { type: Boolean, default: false },
   banned: { type: Boolean, default: false },
   banReason: String
 });
@@ -56,7 +55,7 @@ const reportSchema = new mongoose.Schema({
   targetUsername: String,
   targetFile: String,
   reason: String,
-  status: { type: String, default: 'open' }, // open, reviewed, actioned
+  status: { type: String, default: 'open' },
   timestamp: { type: Date, default: Date.now }
 });
 const Report = mongoose.model('Report', reportSchema);
@@ -70,7 +69,7 @@ const Announcement = mongoose.model('Announcement', announcementSchema);
 const friendRequestSchema = new mongoose.Schema({
   from: String,
   to: String,
-  status: { type: String, default: 'pending' }, // pending, accepted, declined
+  status: { type: String, default: 'pending' },
   timestamp: { type: Date, default: Date.now }
 });
 const FriendRequest = mongoose.model('FriendRequest', friendRequestSchema);
@@ -79,7 +78,7 @@ const directMessageSchema = new mongoose.Schema({
   from: String,
   to: String,
   text: String,
-  sharedFile: String, // path like folder/filename, owned by sender
+  sharedFile: String,
   timestamp: { type: Date, default: Date.now }
 });
 const DirectMessage = mongoose.model('DirectMessage', directMessageSchema);
@@ -160,7 +159,6 @@ function sharedStyles() {
     .folder-name { font-size:14px; color:#e2e8f0; font-weight:600; word-break:break-word; }
     .settings-row { display:flex; justify-content:space-between; align-items:center; padding:14px 0; border-bottom:1px solid rgba(148,163,184,0.12); gap:12px; flex-wrap:wrap; }
     .settings-row:last-child { border-bottom:none; }
-    .badge-pill { background: rgba(51,65,85,0.7); padding:4px 10px; border-radius:20px; font-size:12px; }
     .announcement-banner { background: linear-gradient(135deg, rgba(251,191,36,0.15), rgba(251,191,36,0.05)); border:1px solid rgba(251,191,36,0.4); border-radius:14px; padding:14px 18px; margin-bottom:20px; font-size:14px; color:#fde68a; }
     .msg-bubble { max-width:75%; padding:10px 14px; border-radius:14px; margin-bottom:8px; font-size:14px; }
     .msg-mine { background: linear-gradient(135deg,#38bdf8,#6366f1); color:#0b1120; margin-left:auto; }
@@ -179,7 +177,6 @@ function clientScript() {
   </script>`;
 }
 
-// ---------- Auth-page wrapper ----------
 function authPage(title, body) {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${title} — Jisan Server</title>
@@ -194,8 +191,7 @@ function authPage(title, body) {
   </body></html>`;
 }
 
-// ---------- App-shell wrapper ----------
-function appPage(title, username, activeKey, folders, mainContent, isAdmin, announcementHtml) {
+function appPage(title, username, activeKey, folders, mainContent, announcementHtml) {
   const sidebarLinks = folders.map(f => `
     <a href="/folder/${encodeURIComponent(f)}" class="side-link ${activeKey === 'folder:' + f ? 'active' : ''}">
       <span class="side-icon">📁</span> ${f}
@@ -248,7 +244,6 @@ function appPage(title, username, activeKey, folders, mainContent, isAdmin, anno
             <a href="/messages" class="side-link ${activeKey === 'messages' ? 'active' : ''}">💬 Messages</a>
             <a href="/support" class="side-link ${activeKey === 'support' ? 'active' : ''}">🆘 Help & Support</a>
             <a href="/settings" class="side-link ${activeKey === 'settings' ? 'active' : ''}">⚙️ Settings</a>
-            ${isAdmin ? `<a href="/admin" class="side-link ${activeKey === 'admin' ? 'active' : ''}">🛡️ Admin Panel</a>` : ''}
           </div>
         </div>
         <div>
@@ -270,10 +265,8 @@ function requireLogin(req, res, next) {
   if (!req.session.username) return res.redirect('/login');
   next();
 }
-async function requireAdmin(req, res, next) {
-  if (!req.session.username) return res.redirect('/login');
-  const user = await User.findOne({ username: req.session.username });
-  if (!user || !user.isAdmin) return res.status(403).send('Forbidden — admin only.');
+function requireSecretAdmin(req, res, next) {
+  if (!req.session.isSecretAdmin) return res.redirect('/admin/login');
   next();
 }
 function userDir(username) {
@@ -387,7 +380,7 @@ app.post('/resend-verification', async (req, res) => {
   res.send(authPage('Email resent', `<h1>Sent!</h1><p>Check ${user.email}.</p><p><a href="/login">Back</a></p>`));
 });
 
-// ---------- Login / Logout (with device/IP tracking) ----------
+// ---------- Login / Logout ----------
 app.get('/login', (req, res) => {
   res.send(authPage('Login', `
     <h1>Log in to Jisan Server</h1>
@@ -521,7 +514,6 @@ app.get('/', requireLogin, async (req, res) => {
   const folders = getFolders(username);
   const folderOptions = folders.map(f => `<option value="${f}">${f}</option>`).join('');
   const fileCount = countAllFiles(username);
-  const user = await User.findOne({ username });
   const announcementHtml = await getAnnouncementHtml();
 
   const folderCards = folders.map(f => `
@@ -545,7 +537,7 @@ app.get('/', requireLogin, async (req, res) => {
     <h3>Your Folders</h3>
     ${folders.length ? `<div class="grid">${folderCards}</div>` : `<div class="empty-state"><div class="emoji">📂</div><p>No folders yet.</p></div>`}
   `;
-  res.send(appPage('Dashboard', username, 'home', folders, main, user.isAdmin, announcementHtml));
+  res.send(appPage('Dashboard', username, 'home', folders, main, announcementHtml));
 });
 
 app.post('/create-folder', requireLogin, (req, res) => {
@@ -573,9 +565,8 @@ app.get('/folder/:folder', requireLogin, async (req, res) => {
   const username = req.session.username;
   const folders = getFolders(username);
   const folder = req.params.folder;
-  const user = await User.findOne({ username });
   const announcementHtml = await getAnnouncementHtml();
-  if (!folders.includes(folder)) return res.send(appPage('Not found', username, null, folders, `<div class="empty-state">🚫 Folder not found.</div>`, user.isAdmin, announcementHtml));
+  if (!folders.includes(folder)) return res.send(appPage('Not found', username, null, folders, `<div class="empty-state">🚫 Folder not found.</div>`, announcementHtml));
 
   const files = fs.readdirSync(path.join(userDir(username), folder));
   const cards = files.map(f => fileCardHtml(username, folder, f, true)).join('');
@@ -587,7 +578,7 @@ app.get('/folder/:folder', requireLogin, async (req, res) => {
     </form></div>
     ${files.length ? `<div class="grid">${cards}</div>` : `<div class="empty-state">🗂️ Empty folder.</div>`}
   `;
-  res.send(appPage(folder, username, 'folder:' + folder, folders, main, user.isAdmin, announcementHtml));
+  res.send(appPage(folder, username, 'folder:' + folder, folders, main, announcementHtml));
 });
 
 app.get('/view/:username/:folder/:filename', requireLogin, (req, res) => {
@@ -602,7 +593,6 @@ app.get('/view/:username/:folder/:filename', requireLogin, (req, res) => {
   res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>${filename}</title><style>${sharedStyles()}</style></head><body class="dash"><main class="main">${main}</main></body></html>`);
 });
 
-// Serving files: owner-only, unless the file was shared via a direct message (checked via DirectMessage)
 app.get('/files/:username/:folder/:filename', requireLogin, async (req, res) => {
   const { username, folder, filename } = req.params;
   const requester = req.session.username;
@@ -619,7 +609,6 @@ app.get('/files/:username/:folder/:filename', requireLogin, async (req, res) => 
   return res.status(403).send('Forbidden');
 });
 
-// ---------- Reports ----------
 app.post('/report', requireLogin, async (req, res) => {
   const { targetUsername, targetFile } = req.body;
   await Report.create({ reporter: req.session.username, targetUsername, targetFile: targetFile || '', reason: 'User flagged this content' });
@@ -630,11 +619,9 @@ app.post('/report', requireLogin, async (req, res) => {
 app.get('/friends', requireLogin, async (req, res) => {
   const username = req.session.username;
   const folders = getFolders(username);
-  const user = await User.findOne({ username });
   const announcementHtml = await getAnnouncementHtml();
 
   const incoming = await FriendRequest.find({ to: username, status: 'pending' });
-  const outgoing = await FriendRequest.find({ from: username, status: 'pending' });
   const accepted = await FriendRequest.find({ $or: [{ from: username, status: 'accepted' }, { to: username, status: 'accepted' }] });
   const friendNames = accepted.map(f => f.from === username ? f.to : f.from);
 
@@ -652,8 +639,7 @@ app.get('/friends', requireLogin, async (req, res) => {
       </span>
     </div>`).join('');
 
-  const friendsHtml = friendNames.map(f => `
-    <div class="settings-row"><span>👤 ${f}</span><a href="/messages/${f}">Message →</a></div>`).join('');
+  const friendsHtml = friendNames.map(f => `<div class="settings-row"><span>👤 ${f}</span><a href="/messages/${f}">Message →</a></div>`).join('');
 
   const main = `
     <div class="breadcrumb">Home / Friends</div>
@@ -669,7 +655,7 @@ app.get('/friends', requireLogin, async (req, res) => {
     <h3 style="margin-top:22px;">Your Friends</h3>
     <div class="card" style="max-width:600px; padding:12px 28px;">${friendsHtml || '<p class="small-link">No friends yet.</p>'}</div>
   `;
-  res.send(appPage('Friends', username, 'friends', folders, main, user.isAdmin, announcementHtml));
+  res.send(appPage('Friends', username, 'friends', folders, main, announcementHtml));
 });
 
 app.post('/friends/request', requireLogin, async (req, res) => {
@@ -694,11 +680,10 @@ app.post('/friends/respond', requireLogin, async (req, res) => {
   res.redirect('/friends');
 });
 
-// ---------- Messages (direct, with optional file sharing) ----------
+// ---------- Messages ----------
 app.get('/messages', requireLogin, async (req, res) => {
   const username = req.session.username;
   const folders = getFolders(username);
-  const user = await User.findOne({ username });
   const announcementHtml = await getAnnouncementHtml();
 
   const accepted = await FriendRequest.find({ $or: [{ from: username, status: 'accepted' }, { to: username, status: 'accepted' }] });
@@ -710,18 +695,17 @@ app.get('/messages', requireLogin, async (req, res) => {
     <h1 class="page-title">Messages</h1>
     <div class="card" style="max-width:600px; padding:12px 28px;">${list || '<p class="small-link">Add friends first to start messaging.</p>'}</div>
   `;
-  res.send(appPage('Messages', username, 'messages', folders, main, user.isAdmin, announcementHtml));
+  res.send(appPage('Messages', username, 'messages', folders, main, announcementHtml));
 });
 
 app.get('/messages/:friend', requireLogin, async (req, res) => {
   const username = req.session.username;
   const friend = req.params.friend;
   const folders = getFolders(username);
-  const user = await User.findOne({ username });
   const announcementHtml = await getAnnouncementHtml();
 
   const isFriend = await FriendRequest.findOne({ status: 'accepted', $or: [{ from: username, to: friend }, { from: friend, to: username }] });
-  if (!isFriend) return res.send(appPage('Chat', username, 'messages', folders, `<div class="empty-state">You are not friends with ${friend} yet.</div>`, user.isAdmin, announcementHtml));
+  if (!isFriend) return res.send(appPage('Chat', username, 'messages', folders, `<div class="empty-state">You are not friends with ${friend} yet.</div>`, announcementHtml));
 
   const msgs = await DirectMessage.find({ $or: [{ from: username, to: friend }, { from: friend, to: username }] }).sort({ timestamp: 1 });
   const msgsHtml = msgs.map(m => `
@@ -745,7 +729,7 @@ app.get('/messages/:friend', requireLogin, async (req, res) => {
       <button type="submit">Send</button>
     </form>
   `;
-  res.send(appPage('Chat', username, 'messages', folders, main, user.isAdmin, announcementHtml));
+  res.send(appPage('Chat', username, 'messages', folders, main, announcementHtml));
 });
 
 app.post('/messages/:friend/send', requireLogin, async (req, res) => {
@@ -763,7 +747,6 @@ app.post('/messages/:friend/send', requireLogin, async (req, res) => {
 app.get('/support', requireLogin, async (req, res) => {
   const username = req.session.username;
   const folders = getFolders(username);
-  const user = await User.findOne({ username });
   const announcementHtml = await getAnnouncementHtml();
 
   const msgs = await SupportMessage.find({ username }).sort({ timestamp: 1 });
@@ -778,7 +761,7 @@ app.get('/support', requireLogin, async (req, res) => {
       <button type="submit">Send to Admin</button>
     </form>
   `;
-  res.send(appPage('Support', username, 'support', folders, main, user.isAdmin, announcementHtml));
+  res.send(appPage('Support', username, 'support', folders, main, announcementHtml));
 });
 
 app.post('/support/send', requireLogin, async (req, res) => {
@@ -786,7 +769,7 @@ app.post('/support/send', requireLogin, async (req, res) => {
   res.redirect('/support');
 });
 
-// ---------- Settings (with delete account) ----------
+// ---------- Settings ----------
 app.get('/settings', requireLogin, async (req, res) => {
   const username = req.session.username;
   const folders = getFolders(username);
@@ -817,7 +800,7 @@ app.get('/settings', requireLogin, async (req, res) => {
       </form>
     </div>
   `;
-  res.send(appPage('Settings', username, 'settings', folders, main, user.isAdmin, announcementHtml));
+  res.send(appPage('Settings', username, 'settings', folders, main, announcementHtml));
 });
 
 app.post('/delete-account', requireLogin, async (req, res) => {
@@ -828,109 +811,128 @@ app.post('/delete-account', requireLogin, async (req, res) => {
   req.session.destroy(() => res.redirect('/register'));
 });
 
-// ---------- Admin Panel ----------
-app.get('/admin', requireAdmin, async (req, res) => {
-  const username = req.session.username;
-  const folders = getFolders(username);
-  const user = await User.findOne({ username });
-  const announcementHtml = await getAnnouncementHtml();
+// ---------- SECRET Admin Login ----------
+app.get('/admin/login', (req, res) => {
+  res.send(authPage('Admin Login', `
+    <h1>🛡️ Server Admin Access</h1>
+    <form method="post" action="/admin/login">
+      <input name="username" placeholder="Admin username" required />
+      <div class="pw-wrapper">
+        <input id="admin-pw" name="password" type="password" placeholder="Admin password" required />
+        <button type="button" id="admin-pw-eye" class="pw-toggle" onclick="togglePassword('admin-pw')">👁️</button>
+      </div>
+      <button type="submit">Log In</button>
+    </form>
+  `));
+});
 
+app.post('/admin/login', (req, res) => {
+  const { username, password } = req.body;
+  if (username === process.env.ADMIN_USERNAME && password === process.env.ADMIN_PASSWORD) {
+    req.session.isSecretAdmin = true;
+    return res.redirect('/admin');
+  }
+  res.send('Wrong admin credentials. <a href="/admin/login">Try again</a>');
+});
+
+app.get('/admin/logout', (req, res) => {
+  req.session.isSecretAdmin = false;
+  res.redirect('/admin/login');
+});
+
+// ---------- Admin Panel ----------
+app.get('/admin', requireSecretAdmin, async (req, res) => {
   const allUsers = await User.find().sort({ username: 1 });
-  const recentAttempts = await LoginAttempt.find().sort({ timestamp: -1 }).limit(30);
+  const recentAttempts = await LoginAttempt.find().sort({ timestamp: -1 }).limit(50);
   const openReports = await Report.find({ status: 'open' }).sort({ timestamp: -1 });
   const supportThreads = await SupportMessage.distinct('username');
 
   const usersHtml = allUsers.map(u => `
     <div class="settings-row">
-      <span>${u.username} (${u.email}) ${u.isAdmin ? '👑' : ''} ${u.banned ? '🚫 banned' : ''}</span>
-      <span>
-        <form method="post" action="/admin/ban" style="display:inline;">
-          <input type="hidden" name="username" value="${u.username}" />
-          <input type="hidden" name="action" value="${u.banned ? 'unban' : 'ban'}" />
-          <button type="submit" class="${u.banned ? '' : 'btn-danger'}" style="width:auto; padding:6px 12px;">${u.banned ? 'Unban' : 'Ban'}</button>
-        </form>
-      </span>
+      <span>${u.username} (${u.email}) ${u.banned ? '🚫 banned' : ''}</span>
+      <form method="post" action="/admin/ban" style="display:inline;">
+        <input type="hidden" name="username" value="${u.username}" />
+        <input type="hidden" name="action" value="${u.banned ? 'unban' : 'ban'}" />
+        <button type="submit" class="${u.banned ? '' : 'btn-danger'}" style="width:auto; padding:6px 12px;">${u.banned ? 'Unban' : 'Ban'}</button>
+      </form>
     </div>`).join('');
 
   const attemptsHtml = recentAttempts.map(a => `
-    <div class="settings-row"><span>${a.success ? '✅' : '❌'} ${a.username} — ${a.ip} — ${(a.userAgent || '').slice(0, 50)}</span><b>${new Date(a.timestamp).toLocaleString()}</b></div>`).join('');
+    <div class="settings-row"><span>${a.success ? '✅' : '❌'} ${a.username} — ${a.ip} — ${(a.userAgent || '').slice(0, 60)}</span><b>${new Date(a.timestamp).toLocaleString()}</b></div>`).join('');
 
   const reportsHtml = openReports.map(r => `
     <div class="settings-row"><span>🚩 ${r.reporter} reported ${r.targetUsername}${r.targetFile ? ' (' + r.targetFile + ')' : ''}</span>
       <form method="post" action="/admin/report-resolve" style="display:inline;">
         <input type="hidden" name="id" value="${r._id}" />
         <button type="submit" style="width:auto; padding:6px 12px;">Mark Reviewed</button>
-      </form>
-    </div>`).join('');
+      </form></div>`).join('');
 
   const supportHtml = supportThreads.map(u => `<div class="settings-row"><span>💬 ${u}</span><a href="/admin/support/${u}">Open thread →</a></div>`).join('');
 
-  const main = `
-    <div class="breadcrumb">Home / Admin Panel</div>
-    <h1 class="page-title">🛡️ Admin Panel</h1>
+  const body = `
+    <div class="card" style="max-width:900px; margin: 0 auto;">
+      <div class="brand"><span class="brand-dot"></span><span class="brand-name">JISAN SERVER — ADMIN</span></div>
+      <div style="text-align:right; margin-bottom:10px;"><a href="/admin/logout">Log out of admin</a></div>
 
-    <h3>Post a Notice to All Users</h3>
-    <div class="card" style="max-width:700px; padding:20px 24px;">
+      <h3>Post a Notice to All Users</h3>
       <form method="post" action="/admin/announce">
-        <textarea name="message" rows="2" placeholder="Notice text shown to everyone..." required></textarea>
+        <textarea name="message" rows="2" placeholder="Notice text..." required></textarea>
         <button type="submit">Post Notice</button>
       </form>
+
+      <h3 style="margin-top:22px;">Open Reports (${openReports.length})</h3>
+      ${reportsHtml || '<p class="small-link">No open reports.</p>'}
+
+      <h3 style="margin-top:22px;">All Users (${allUsers.length})</h3>
+      ${usersHtml}
+
+      <h3 style="margin-top:22px;">Login Activity — Devices & IPs</h3>
+      ${attemptsHtml || '<p class="small-link">No activity yet.</p>'}
+
+      <h3 style="margin-top:22px;">Support Threads</h3>
+      ${supportHtml || '<p class="small-link">None yet.</p>'}
     </div>
-
-    <h3 style="margin-top:24px;">Open Reports (${openReports.length})</h3>
-    <div class="card" style="max-width:700px; padding:12px 24px;">${reportsHtml || '<p class="small-link">No open reports.</p>'}</div>
-
-    <h3 style="margin-top:24px;">All Users (${allUsers.length})</h3>
-    <div class="card" style="max-width:700px; padding:12px 24px;">${usersHtml}</div>
-
-    <h3 style="margin-top:24px;">Recent Login Activity (all users, devices/IPs)</h3>
-    <div class="card" style="max-width:700px; padding:12px 24px;">${attemptsHtml || '<p class="small-link">No activity yet.</p>'}</div>
-
-    <h3 style="margin-top:24px;">Support Threads</h3>
-    <div class="card" style="max-width:700px; padding:12px 24px;">${supportHtml || '<p class="small-link">No support messages yet.</p>'}</div>
   `;
-  res.send(appPage('Admin', username, 'admin', folders, main, true, announcementHtml));
+
+  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Admin — Jisan Server</title><style>${sharedStyles()}</style></head><body>${body}${clientScript()}</body></html>`);
 });
 
-app.post('/admin/announce', requireAdmin, async (req, res) => {
+app.post('/admin/announce', requireSecretAdmin, async (req, res) => {
   await Announcement.create({ message: req.body.message });
   res.redirect('/admin');
 });
 
-app.post('/admin/ban', requireAdmin, async (req, res) => {
+app.post('/admin/ban', requireSecretAdmin, async (req, res) => {
   const { username, action } = req.body;
   await User.updateOne({ username }, { banned: action === 'ban' });
   res.redirect('/admin');
 });
 
-app.post('/admin/report-resolve', requireAdmin, async (req, res) => {
+app.post('/admin/report-resolve', requireSecretAdmin, async (req, res) => {
   await Report.updateOne({ _id: req.body.id }, { status: 'reviewed' });
   res.redirect('/admin');
 });
 
-app.get('/admin/support/:username', requireAdmin, async (req, res) => {
-  const adminUsername = req.session.username;
-  const folders = getFolders(adminUsername);
-  const admin = await User.findOne({ username: adminUsername });
-  const announcementHtml = await getAnnouncementHtml();
+app.get('/admin/support/:username', requireSecretAdmin, async (req, res) => {
   const targetUser = req.params.username;
-
   const msgs = await SupportMessage.find({ username: targetUser }).sort({ timestamp: 1 });
-  const msgsHtml = msgs.map(m => `<div class="msg-bubble ${m.fromAdmin ? 'msg-mine' : 'msg-theirs'}">${m.fromAdmin ? '🛡️ You: ' : targetUser + ': '}${m.message}</div>`).join('');
+  const msgsHtml = msgs.map(m => `<div class="msg-bubble ${m.fromAdmin ? 'msg-mine' : 'msg-theirs'}">${m.fromAdmin ? 'You: ' : targetUser + ': '}${m.message}</div>`).join('');
 
-  const main = `
-    <div class="breadcrumb"><a href="/admin">Admin</a> / Support: ${targetUser}</div>
-    <h1 class="page-title">Support thread with ${targetUser}</h1>
-    <div class="card" style="max-width:700px; padding:16px;"><div class="msg-list">${msgsHtml}</div></div>
-    <form method="post" action="/admin/support/${targetUser}/reply" style="max-width:700px; margin-top:12px;">
-      <input name="message" placeholder="Type your reply..." required />
-      <button type="submit">Reply</button>
-    </form>
-  `;
-  res.send(appPage('Support Thread', adminUsername, 'admin', folders, main, admin.isAdmin, announcementHtml));
+  const body = `
+    <div class="card" style="max-width:700px; margin:0 auto;">
+      <div class="brand"><span class="brand-dot"></span><span class="brand-name">JISAN SERVER — ADMIN</span></div>
+      <div class="breadcrumb"><a href="/admin">Admin</a> / Support: ${targetUser}</div>
+      <h1 class="page-title">Support thread with ${targetUser}</h1>
+      <div class="msg-list">${msgsHtml}</div>
+      <form method="post" action="/admin/support/${targetUser}/reply">
+        <input name="message" placeholder="Type your reply..." required />
+        <button type="submit">Reply</button>
+      </form>
+    </div>`;
+  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Support — Admin</title><style>${sharedStyles()}</style></head><body>${body}${clientScript()}</body></html>`);
 });
 
-app.post('/admin/support/:username/reply', requireAdmin, async (req, res) => {
+app.post('/admin/support/:username/reply', requireSecretAdmin, async (req, res) => {
   await SupportMessage.create({ username: req.params.username, message: req.body.message, fromAdmin: true });
   res.redirect(`/admin/support/${req.params.username}`);
 });
