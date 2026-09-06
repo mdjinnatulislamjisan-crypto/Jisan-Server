@@ -15,8 +15,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
+let gridBucket;
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB connected'))
+  .then(() => {
+    console.log('MongoDB connected');
+    gridBucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'uploads' });
+  })
   .catch(err => console.error('MongoDB connection error:', err.message));
 
 // ---------- Schemas ----------
@@ -75,6 +79,37 @@ const friendRequestSchema = new mongoose.Schema({
 });
 const FriendRequest = mongoose.model('FriendRequest', friendRequestSchema);
 
+// Files are stored in MongoDB itself (GridFS) so they survive redeploys —
+// Render's disk gets wiped on every push, MongoDB does not.
+const fileMetaSchema = new mongoose.Schema({
+  username: { type: String, required: true, index: true },
+  folder: { type: String, required: true },
+  filename: { type: String, required: true },
+  originalName: { type: String, required: true },
+  contentType: String,
+  size: Number,
+  gridId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  uploadedAt: { type: Date, default: Date.now }
+});
+const FileMeta = mongoose.model('FileMeta', fileMetaSchema);
+
+const folderSchema = new mongoose.Schema({
+  username: { type: String, required: true, index: true },
+  name: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now }
+});
+folderSchema.index({ username: 1, name: 1 }, { unique: true });
+const Folder = mongoose.model('Folder', folderSchema);
+
+// A notice sent privately to one specific user (vs. the broadcast Announcement)
+const privateNoticeSchema = new mongoose.Schema({
+  username: { type: String, required: true, index: true },
+  message: { type: String, required: true },
+  read: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now }
+});
+const PrivateNotice = mongoose.model('PrivateNotice', privateNoticeSchema);
+
 const directMessageSchema = new mongoose.Schema({
   from: String,
   to: String,
@@ -97,9 +132,6 @@ async function sendEmail(toEmail, subject, html) {
   });
 }
 
-const DATA_DIR = path.join(__dirname, 'my-files');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
-
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(session({
@@ -108,11 +140,55 @@ app.use(session({
   saveUninitialized: false
 }));
 
+// ---------- Site-wide secret PIN gate ----------
+// If SITE_PIN is set, nobody — not even to see the login/register pages —
+// gets past this screen without it. Set SITE_PIN in your environment to enable.
+app.use((req, res, next) => {
+  if (!process.env.SITE_PIN) return next(); // gate disabled if no PIN configured
+  if (req.path.startsWith('/site-pin')) return next();
+  if (req.session.sitePinOk) return next();
+  res.redirect('/site-pin');
+});
+
+app.get('/site-pin', (req, res) => {
+  const wrong = req.query.wrong ? `<p class="hint-text" style="color:#c0262b;">Incorrect PIN. Try again.</p>` : '';
+  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Access Required — Jisan Server</title>
+  <style>${sharedStyles()}
+    body.pin-gate { display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px; }
+    .pin-card { max-width:360px; width:100%; text-align:center; position:relative; z-index:1; }
+    .pin-card input { text-align:center; letter-spacing:6px; font-size:20px; }
+  </style></head>
+  <body class="pin-gate">
+    <div class="bg-orb orb1"></div><div class="bg-orb orb2"></div><div class="bg-orb orb3"></div>
+    <div class="card pin-card">
+      <div class="brand" style="justify-content:center;"><span class="brand-dot"></span><span class="brand-name">Jisan Server</span></div>
+      <h1>🔒 Private Access</h1>
+      <p class="small-link">This server is invite-only. Enter the access PIN to continue.</p>
+      ${wrong}
+      <form method="post" action="/site-pin">
+        <input name="pin" type="password" inputmode="numeric" placeholder="••••" required autofocus />
+        <button type="submit">Enter</button>
+      </form>
+    </div>
+    ${clientScript()}
+  </body></html>`);
+});
+
+app.post('/site-pin', (req, res) => {
+  if ((req.body.pin || '') === process.env.SITE_PIN) {
+    req.session.sitePinOk = true;
+    return res.redirect('/');
+  }
+  res.redirect('/site-pin?wrong=1');
+});
+
 // ---------- Shared styles (Facebook-style layout, colorful animated background) ----------
 function sharedStyles() {
   return `
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     * { box-sizing: border-box; }
-    html, body { margin:0; min-height:100%; font-family:'Segoe UI', Helvetica, Arial, sans-serif; color:#1c1e21; }
+    html, body { margin:0; min-height:100%; font-family:'Inter', 'Segoe UI', Helvetica, Arial, sans-serif; color:#1c1e21; }
     body {
       min-height:100vh;
       background: linear-gradient(-45deg, #4f46e5, #0ea5e9, #a855f7, #f43f5e, #f59e0b, #10b981);
@@ -376,25 +452,44 @@ function requireSecretAdmin(req, res, next) {
   if (!req.session.isSecretAdmin) return res.redirect('/admin/login');
   next();
 }
-function userDir(username) {
-  const dir = path.join(DATA_DIR, username);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  return dir;
+async function getFolders(username) {
+  const [folderDocs, fileFolders] = await Promise.all([
+    Folder.find({ username }).select('name -_id'),
+    FileMeta.distinct('folder', { username })
+  ]);
+  const set = new Set([...folderDocs.map(f => f.name), ...fileFolders]);
+  return Array.from(set).sort();
 }
-function getFolders(username) {
-  const dir = userDir(username);
-  return fs.readdirSync(dir).filter(f => fs.statSync(path.join(dir, f)).isDirectory());
+async function countAllFiles(username) {
+  return FileMeta.countDocuments({ username });
 }
-function countAllFiles(username) {
-  const folders = getFolders(username);
-  let count = 0;
-  folders.forEach(f => { count += fs.readdirSync(path.join(userDir(username), f)).length; });
-  return count;
+function copyFileToUser(fileDoc, newOwner, newFolder) {
+  return new Promise((resolve, reject) => {
+    if (!gridBucket) return reject(new Error('Storage not ready'));
+    const storedName = `${Date.now()}-${fileDoc.originalName}`;
+    const downloadStream = gridBucket.openDownloadStream(fileDoc.gridId);
+    const uploadStream = gridBucket.openUploadStream(storedName, { contentType: fileDoc.contentType });
+    downloadStream.pipe(uploadStream);
+    uploadStream.on('error', reject);
+    uploadStream.on('finish', async () => {
+      try {
+        await Folder.updateOne({ username: newOwner, name: newFolder }, { $setOnInsert: { username: newOwner, name: newFolder } }, { upsert: true });
+        const copy = await FileMeta.create({ username: newOwner, folder: newFolder, filename: storedName, originalName: fileDoc.originalName, contentType: fileDoc.contentType, size: fileDoc.size, gridId: uploadStream.id });
+        resolve(copy);
+      } catch (e) { reject(e); }
+    });
+  });
 }
 async function getAnnouncementHtml() {
   const latest = await Announcement.findOne().sort({ timestamp: -1 });
   if (!latest) return '';
   return `<div class="announcement-banner">📢 <b>Notice from admin:</b> ${latest.message}</div>`;
+}
+async function getPrivateNoticeHtml(username) {
+  const notice = await PrivateNotice.findOne({ username, read: false }).sort({ createdAt: -1 });
+  if (!notice) return '';
+  await PrivateNotice.updateOne({ _id: notice._id }, { read: true });
+  return `<div class="announcement-banner" style="background:linear-gradient(90deg,#ede9fe,#fce7f3); border-color:#ddd6fe; color:#5b21b6;">✉️ <b>Private message from admin:</b> ${notice.message}</div>`;
 }
 
 // ---------- Register ----------
@@ -433,7 +528,6 @@ app.post('/register', async (req, res) => {
     const verifyToken = crypto.randomBytes(24).toString('hex');
 
     await new User({ username: clean, email: cleanEmail, password: hash, securityQuestion: securityQuestion.trim(), securityAnswer: answerHash, verified: false, verifyToken }).save();
-    userDir(clean);
 
     const verifyLink = `${BASE_URL}/verify-email?token=${verifyToken}`;
     try {
@@ -581,20 +675,12 @@ app.post('/forgot-password/reset', async (req, res) => {
   res.send('Password reset! <a href="/login">Log in now</a>');
 });
 
-// ---------- File storage ----------
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const folder = (req.body.folder || 'general').replace(/[^a-zA-Z0-9_-]/g, '');
-    const dest = path.join(userDir(req.session.username), folder);
-    if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
-    cb(null, dest);
-  },
-  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
-});
-const upload = multer({ storage });
+// ---------- File storage (MongoDB GridFS — persists across redeploys) ----------
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
-function fileCardHtml(username, folder, f, isOwner) {
-  const ext = path.extname(f).toLowerCase();
+function fileCardHtml(username, folder, displayName, isOwner, storedFilename) {
+  const f = storedFilename || displayName;
+  const ext = path.extname(displayName).toLowerCase();
   const url = `/files/${username}/${folder}/${encodeURIComponent(f)}`;
   let preview = '';
   if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) preview = `<img src="${url}" class="thumb" loading="lazy" />`;
@@ -619,17 +705,18 @@ function fileCardHtml(username, folder, f, isOwner) {
         ${deleteBtn}
       </div>
     </div>
-    <p class="filename">${f}</p>
+    <p class="filename">${displayName}</p>
   </div>`;
 }
 
 // ---------- Dashboard ----------
 app.get('/', requireLogin, async (req, res) => {
   const username = req.session.username;
-  const folders = getFolders(username);
+  const folders = await getFolders(username);
   const folderOptions = folders.map(f => `<option value="${f}">${f}</option>`).join('');
-  const fileCount = countAllFiles(username);
+  const fileCount = await countAllFiles(username);
   const announcementHtml = await getAnnouncementHtml();
+  const privateNoticeHtml = await getPrivateNoticeHtml(username);
 
   const folderCards = folders.map(f => `
     <a href="/folder/${encodeURIComponent(f)}" class="folder-card"><div class="folder-icon">📁</div><div class="folder-name">${f}</div></a>`).join('');
@@ -652,39 +739,59 @@ app.get('/', requireLogin, async (req, res) => {
     <h3>Your Folders</h3>
     ${folders.length ? `<div class="grid">${folderCards}</div>` : `<div class="empty-state"><div class="emoji">📂</div><p>No folders yet.</p></div>`}
   `;
-  res.send(appPage('Dashboard', username, 'home', folders, main, announcementHtml));
+  res.send(appPage('Dashboard', username, 'home', folders, main, announcementHtml + privateNoticeHtml));
 });
 
-app.post('/create-folder', requireLogin, (req, res) => {
+app.post('/create-folder', requireLogin, async (req, res) => {
   const folder = (req.body.foldername || '').replace(/[^a-zA-Z0-9_-]/g, '');
   if (!folder) return res.send('Invalid folder name. <a href="/">Back</a>');
-  fs.mkdirSync(path.join(userDir(req.session.username), folder), { recursive: true });
+  try {
+    await Folder.updateOne({ username: req.session.username, name: folder }, { $setOnInsert: { username: req.session.username, name: folder } }, { upsert: true });
+  } catch (e) { /* already exists */ }
   res.redirect('/');
 });
 
-app.post('/upload', requireLogin, upload.single('myfile'), (req, res) => {
-  const folder = (req.body.folder || 'general').replace(/[^a-zA-Z0-9_-]/g, '');
-  res.redirect(`/folder/${encodeURIComponent(folder)}`);
+app.post('/upload', requireLogin, upload.single('myfile'), async (req, res) => {
+  const username = req.session.username;
+  const folder = (req.body.folder || 'general').replace(/[^a-zA-Z0-9_-]/g, '') || 'general';
+  if (!req.file) return res.send('No file received. <a href="/">Back</a>');
+  if (!gridBucket) return res.send('Storage is still starting up — try again shortly. <a href="/">Back</a>');
+
+  const storedName = `${Date.now()}-${req.file.originalname}`;
+  const uploadStream = gridBucket.openUploadStream(storedName, { contentType: req.file.mimetype });
+  uploadStream.end(req.file.buffer);
+  uploadStream.on('error', (err) => { console.error('GridFS upload error:', err.message); res.send('Upload failed. <a href="/">Back</a>'); });
+  uploadStream.on('finish', async () => {
+    try {
+      await Folder.updateOne({ username, name: folder }, { $setOnInsert: { username, name: folder } }, { upsert: true });
+      await FileMeta.create({ username, folder, filename: storedName, originalName: req.file.originalname, contentType: req.file.mimetype, size: req.file.size, gridId: uploadStream.id });
+    } catch (e) { console.error('Saving file metadata failed:', e.message); }
+    res.redirect(`/folder/${encodeURIComponent(folder)}`);
+  });
 });
 
-app.post('/delete-file', requireLogin, (req, res) => {
-  const folder = (req.body.folder || '').replace(/[^a-zA-Z0-9_-]/g, '');
-  const filename = req.body.filename;
-  const filePath = path.join(userDir(req.session.username), folder, filename);
-  const base = userDir(req.session.username);
-  if (filePath.startsWith(base) && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+app.post('/delete-file', requireLogin, async (req, res) => {
+  const username = req.session.username;
+  const { folder, filename } = req.body;
+  try {
+    const fileDoc = await FileMeta.findOne({ username, folder, filename });
+    if (fileDoc) {
+      if (gridBucket) { try { await gridBucket.delete(fileDoc.gridId); } catch (e) { } }
+      await FileMeta.deleteOne({ _id: fileDoc._id });
+    }
+  } catch (e) { console.error('Delete file error:', e.message); }
   res.redirect(`/folder/${encodeURIComponent(folder)}`);
 });
 
 app.get('/folder/:folder', requireLogin, async (req, res) => {
   const username = req.session.username;
-  const folders = getFolders(username);
+  const folders = await getFolders(username);
   const folder = req.params.folder;
   const announcementHtml = await getAnnouncementHtml();
   if (!folders.includes(folder)) return res.send(appPage('Not found', username, null, folders, `<div class="empty-state">🚫 Folder not found.</div>`, announcementHtml));
 
-  const files = fs.readdirSync(path.join(userDir(username), folder));
-  const cards = files.map(f => fileCardHtml(username, folder, f, true)).join('');
+  const files = await FileMeta.find({ username, folder }).sort({ uploadedAt: -1 });
+  const cards = files.map(f => fileCardHtml(username, folder, f.originalName, true, f.filename)).join('');
   const main = `
     <div class="breadcrumb"><a href="/">Home</a> / ${folder}</div>
     <h1 class="page-title">${folder}</h1>
@@ -711,17 +818,23 @@ app.get('/view/:username/:folder/:filename', requireLogin, (req, res) => {
 app.get('/files/:username/:folder/:filename', requireLogin, async (req, res) => {
   const { username, folder, filename } = req.params;
   const requester = req.session.username;
-  const base = userDir(username);
-  const filePath = path.join(base, folder, filename);
-  if (!filePath.startsWith(base) || !fs.existsSync(filePath)) return res.status(404).send('Not found');
-
-  if (requester === username) return res.sendFile(filePath);
-
-  const sharedPath = `${folder}/${filename}`;
-  const wasShared = await DirectMessage.findOne({ from: username, to: requester, sharedFile: sharedPath });
-  if (wasShared) return res.sendFile(filePath);
-
-  return res.status(403).send('Forbidden');
+  try {
+    const fileDoc = await FileMeta.findOne({ username, folder, filename });
+    if (!fileDoc) return res.status(404).send('Not found');
+    if (requester !== username) {
+      const sharedPath = `${folder}/${filename}`;
+      const wasShared = await DirectMessage.findOne({ from: username, to: requester, sharedFile: sharedPath });
+      if (!wasShared) return res.status(403).send('Forbidden');
+    }
+    if (!gridBucket) return res.status(503).send('Storage is still starting up.');
+    res.set('Content-Type', fileDoc.contentType || 'application/octet-stream');
+    const downloadStream = gridBucket.openDownloadStream(fileDoc.gridId);
+    downloadStream.on('error', () => { if (!res.headersSent) res.status(404).end(); });
+    downloadStream.pipe(res);
+  } catch (e) {
+    console.error('File retrieval error:', e.message);
+    res.status(500).send('Error retrieving file');
+  }
 });
 
 app.post('/report', requireLogin, async (req, res) => {
@@ -733,7 +846,7 @@ app.post('/report', requireLogin, async (req, res) => {
 // ---------- Friends ----------
 app.get('/friends', requireLogin, async (req, res) => {
   const username = req.session.username;
-  const folders = getFolders(username);
+  const folders = await getFolders(username);
   const announcementHtml = await getAnnouncementHtml();
 
   const incoming = await FriendRequest.find({ to: username, status: 'pending' });
@@ -798,7 +911,7 @@ app.post('/friends/respond', requireLogin, async (req, res) => {
 // ---------- Messages ----------
 app.get('/messages', requireLogin, async (req, res) => {
   const username = req.session.username;
-  const folders = getFolders(username);
+  const folders = await getFolders(username);
   const announcementHtml = await getAnnouncementHtml();
 
   const accepted = await FriendRequest.find({ $or: [{ from: username, status: 'accepted' }, { to: username, status: 'accepted' }] });
@@ -816,7 +929,7 @@ app.get('/messages', requireLogin, async (req, res) => {
 app.get('/messages/:friend', requireLogin, async (req, res) => {
   const username = req.session.username;
   const friend = req.params.friend;
-  const folders = getFolders(username);
+  const folders = await getFolders(username);
   const announcementHtml = await getAnnouncementHtml();
 
   const isFriend = await FriendRequest.findOne({ status: 'accepted', $or: [{ from: username, to: friend }, { from: friend, to: username }] });
@@ -829,8 +942,8 @@ app.get('/messages/:friend', requireLogin, async (req, res) => {
       ${m.sharedFile ? `<br/><a href="/files/${m.from}/${m.sharedFile}" style="color:inherit; text-decoration:underline;">📎 ${m.sharedFile.split('/').pop()}</a>` : ''}
     </div>`).join('');
 
-  const myFolders = getFolders(username);
-  const fileOptions = myFolders.flatMap(f => fs.readdirSync(path.join(userDir(username), f)).map(file => `<option value="${f}/${file}">${f}/${file}</option>`)).join('');
+  const myFiles = await FileMeta.find({ username });
+  const fileOptions = myFiles.map(f => `<option value="${f.folder}/${f.filename}">${f.folder}/${f.originalName}</option>`).join('');
 
   const main = `
     <div class="breadcrumb"><a href="/messages">Messages</a> / ${friend}</div>
@@ -876,7 +989,7 @@ app.post('/messages/:friend/send', requireLogin, async (req, res) => {
 // ---------- Help & Support ----------
 app.get('/support', requireLogin, async (req, res) => {
   const username = req.session.username;
-  const folders = getFolders(username);
+  const folders = await getFolders(username);
   const announcementHtml = await getAnnouncementHtml();
 
   const msgs = await SupportMessage.find({ username }).sort({ timestamp: 1 });
@@ -912,12 +1025,13 @@ app.post('/support/send', requireLogin, async (req, res) => {
 // ---------- Settings ----------
 app.get('/settings', requireLogin, async (req, res) => {
   const username = req.session.username;
-  const folders = getFolders(username);
+  const folders = await getFolders(username);
   const user = await User.findOne({ username });
   const announcementHtml = await getAnnouncementHtml();
   const attempts = await LoginAttempt.find({ username }).sort({ timestamp: -1 }).limit(10);
   const attemptsHtml = attempts.map(a => `
     <div class="settings-row"><span>${a.success ? '✅' : '❌'} ${a.ip || 'unknown IP'} — ${(a.userAgent || '').slice(0, 40)}</span><b>${new Date(a.timestamp).toLocaleString()}</b></div>`).join('');
+  const totalFiles = await countAllFiles(username);
 
   const main = `
     <div class="breadcrumb">Home / Settings</div>
@@ -927,7 +1041,7 @@ app.get('/settings', requireLogin, async (req, res) => {
       <div class="settings-row"><span>Email</span><b>${user.email}</b></div>
       <div class="settings-row"><span>Account status</span><b>${user.verified ? '✅ Verified' : '⏳ Not verified'}</b></div>
       <div class="settings-row"><span>Total folders</span><b>${folders.length}</b></div>
-      <div class="settings-row"><span>Total files</span><b>${countAllFiles(username)}</b></div>
+      <div class="settings-row"><span>Total files</span><b>${totalFiles}</b></div>
     </div>
     <h3 style="margin-top:26px;">Recent Login Attempts (Devices)</h3>
     <div class="card" style="max-width:600px; padding:12px 28px;">${attemptsHtml || '<p class="small-link">No attempts yet.</p>'}</div>
@@ -943,11 +1057,26 @@ app.get('/settings', requireLogin, async (req, res) => {
   res.send(appPage('Settings', username, 'settings', folders, main, announcementHtml));
 });
 
+// Fully removes a user: account, files (Mongo + GridFS bytes), folders,
+// friendships, messages, support thread, login history, notices.
+async function deleteUserCompletely(username) {
+  const files = await FileMeta.find({ username });
+  if (gridBucket) {
+    for (const f of files) { try { await gridBucket.delete(f.gridId); } catch (e) { } }
+  }
+  await FileMeta.deleteMany({ username });
+  await Folder.deleteMany({ username });
+  await User.deleteOne({ username });
+  await FriendRequest.deleteMany({ $or: [{ from: username }, { to: username }] });
+  await DirectMessage.deleteMany({ $or: [{ from: username }, { to: username }] });
+  await SupportMessage.deleteMany({ username });
+  await LoginAttempt.deleteMany({ username });
+  await PrivateNotice.deleteMany({ username });
+}
+
 app.post('/delete-account', requireLogin, async (req, res) => {
   const username = req.session.username;
-  await User.deleteOne({ username });
-  const dir = userDir(username);
-  fs.rmSync(dir, { recursive: true, force: true });
+  await deleteUserCompletely(username);
   req.session.destroy(() => res.redirect('/register'));
 });
 
@@ -1014,11 +1143,17 @@ app.get('/admin', requireSecretAdmin, async (req, res) => {
   const usersHtml = allUsers.map(u => `
     <div class="admin-row">
       <span>${u.username} <span style="color:#6b7280;">(${u.email})</span> ${u.banned ? '<span class="fb-badge red">Banned</span>' : (!u.verified ? '<span class="fb-badge gray">Unverified</span>' : (!u.approved ? '<span class="fb-badge blue">Pending Approval</span>' : '<span class="fb-badge green">Active</span>'))}</span>
-      <form method="post" action="/admin/ban" style="display:inline; width:auto; margin:0;">
-        <input type="hidden" name="username" value="${u.username}" />
-        <input type="hidden" name="action" value="${u.banned ? 'unban' : 'ban'}" />
-        <button type="submit" class="${u.banned ? 'btn-ghost' : 'btn-danger'}">${u.banned ? 'Unban' : 'Ban'}</button>
-      </form>
+      <span style="display:flex; gap:8px;">
+        <form method="post" action="/admin/ban" style="display:inline; width:auto; margin:0;">
+          <input type="hidden" name="username" value="${u.username}" />
+          <input type="hidden" name="action" value="${u.banned ? 'unban' : 'ban'}" />
+          <button type="submit" class="${u.banned ? 'btn-ghost' : 'btn-danger'}">${u.banned ? 'Unban' : 'Ban'}</button>
+        </form>
+        <form method="post" action="/admin/delete-user" style="display:inline; width:auto; margin:0;" onsubmit="return confirm('Permanently delete ${u.username} and all their files? This cannot be undone.');">
+          <input type="hidden" name="username" value="${u.username}" />
+          <button type="submit" class="btn-danger">Delete</button>
+        </form>
+      </span>
     </div>`).join('');
 
   const attemptsHtml = recentAttempts.map(a => `
@@ -1049,6 +1184,16 @@ app.get('/admin', requireSecretAdmin, async (req, res) => {
         <textarea name="message" rows="2" placeholder="Notice text..." required></textarea>
         <button type="submit">Post Notice</button>
       </form>
+    </div>
+
+    <div class="admin-section">
+      <h3>✉️ Message or Notice One User Privately</h3>
+      <form method="post" action="/admin/notice-user">
+        <input name="username" placeholder="Their username" required />
+        <textarea name="message" rows="2" placeholder="Private message (shows as a banner on their dashboard)..." required></textarea>
+        <button type="submit">Send Private Notice</button>
+      </form>
+      <p class="small-link">Or open their full support thread to chat back and forth: <a href="#" onclick="const u=prompt('Username?'); if(u) location.href='/admin/support/'+encodeURIComponent(u); return false;">Open a support thread with a user →</a></p>
     </div>
 
     <div class="admin-section">
@@ -1090,9 +1235,22 @@ app.post('/admin/announce', requireSecretAdmin, async (req, res) => {
   res.redirect('/admin');
 });
 
+app.post('/admin/notice-user', requireSecretAdmin, async (req, res) => {
+  const username = (req.body.username || '').trim().toLowerCase();
+  const exists = await User.findOne({ username });
+  if (!exists) return res.send(`No user named "${username}" found. <a href="/admin">Back</a>`);
+  await PrivateNotice.create({ username, message: req.body.message });
+  res.redirect('/admin');
+});
+
 app.post('/admin/ban', requireSecretAdmin, async (req, res) => {
   const { username, action } = req.body;
   await User.updateOne({ username }, { banned: action === 'ban' });
+  res.redirect('/admin');
+});
+
+app.post('/admin/delete-user', requireSecretAdmin, async (req, res) => {
+  await deleteUserCompletely(req.body.username);
   res.redirect('/admin');
 });
 
