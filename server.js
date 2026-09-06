@@ -1143,7 +1143,8 @@ app.get('/admin', requireSecretAdmin, async (req, res) => {
   const usersHtml = allUsers.map(u => `
     <div class="admin-row">
       <span>${u.username} <span style="color:#6b7280;">(${u.email})</span> ${u.banned ? '<span class="fb-badge red">Banned</span>' : (!u.verified ? '<span class="fb-badge gray">Unverified</span>' : (!u.approved ? '<span class="fb-badge blue">Pending Approval</span>' : '<span class="fb-badge green">Active</span>'))}</span>
-      <span style="display:flex; gap:8px;">
+      <span style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a href="/admin/users/${u.username}" class="overlay-btn btn-ghost" style="width:auto; padding:6px 14px; text-decoration:none; display:inline-block;">View Activity</a>
         <form method="post" action="/admin/ban" style="display:inline; width:auto; margin:0;">
           <input type="hidden" name="username" value="${u.username}" />
           <input type="hidden" name="action" value="${u.banned ? 'unban' : 'ban'}" />
@@ -1257,6 +1258,72 @@ app.post('/admin/delete-user', requireSecretAdmin, async (req, res) => {
 app.post('/admin/report-resolve', requireSecretAdmin, async (req, res) => {
   await Report.updateOne({ _id: req.body.id }, { status: 'reviewed' });
   res.redirect('/admin');
+});
+
+// ---------- Per-user activity: login history + every file they've uploaded ----------
+app.get('/admin/users/:username', requireSecretAdmin, async (req, res) => {
+  const targetUser = req.params.username;
+  const user = await User.findOne({ username: targetUser });
+  if (!user) return res.send(`No user named "${targetUser}" found. <a href="/admin">Back to admin</a>`);
+
+  const attempts = await LoginAttempt.find({ username: targetUser }).sort({ timestamp: -1 }).limit(30);
+  const files = await FileMeta.find({ username: targetUser }).sort({ uploadedAt: -1 });
+
+  const attemptsHtml = attempts.map(a => `
+    <div class="admin-row"><span>${a.success ? '✅ Success' : '❌ Failed'} — ${a.ip || 'unknown IP'} — <span style="color:#6b7280;">${(a.userAgent || '').slice(0, 70)}</span></span><span style="color:#6b7280;">${new Date(a.timestamp).toLocaleString()}</span></div>`).join('');
+
+  const filesHtml = files.map(f => {
+    const url = `/admin/files/${targetUser}/${f.folder}/${encodeURIComponent(f.filename)}`;
+    const sizeKb = f.size ? (f.size / 1024).toFixed(1) + ' KB' : '';
+    return `<div class="admin-row">
+      <span>📄 <b>${f.originalName}</b> <span style="color:#6b7280;">(${f.folder}, ${sizeKb})</span></span>
+      <span style="display:flex; gap:8px;">
+        <a href="${url}" target="_blank" class="overlay-btn btn-ghost" style="width:auto; padding:6px 12px; text-decoration:none; display:inline-block;">Open</a>
+        <a href="${url}?download=1" class="overlay-btn btn-ghost" style="width:auto; padding:6px 12px; text-decoration:none; display:inline-block;">⬇ Download</a>
+        <span style="color:#6b7280; font-size:12px;">${new Date(f.uploadedAt).toLocaleString()}</span>
+      </span>
+    </div>`;
+  }).join('');
+
+  const body = `
+    <div class="admin-section">
+      <div class="breadcrumb" style="color:#9ca3af;"><a href="/admin">Admin</a> / ${targetUser}</div>
+      <h1 class="page-title" style="color:#f9fafb;">${targetUser}</h1>
+      <div class="admin-row"><span>Email</span><span>${user.email}</span></div>
+      <div class="admin-row"><span>Status</span><span>${user.banned ? '🚫 Banned' : (!user.verified ? '⏳ Unverified' : (!user.approved ? '⏳ Pending Approval' : '✅ Active'))}</span></div>
+      <div class="admin-row"><span>Total files</span><span>${files.length}</span></div>
+    </div>
+
+    <div class="admin-section">
+      <h3>📁 Files Uploaded by ${targetUser} (${files.length})</h3>
+      ${filesHtml || '<p class="small-link">No files uploaded yet.</p>'}
+    </div>
+
+    <div class="admin-section">
+      <h3>🔐 Login History — Devices &amp; IPs</h3>
+      ${attemptsHtml || '<p class="small-link">No login attempts recorded.</p>'}
+    </div>
+  `;
+  res.send(adminPage(`${targetUser} — Activity`, body, '/admin'));
+});
+
+// Lets the admin open/download any user's file directly, bypassing the
+// normal ownership check on /files/... since the admin isn't logged in as them.
+app.get('/admin/files/:username/:folder/:filename', requireSecretAdmin, async (req, res) => {
+  const { username, folder, filename } = req.params;
+  try {
+    const fileDoc = await FileMeta.findOne({ username, folder, filename });
+    if (!fileDoc) return res.status(404).send('Not found');
+    if (!gridBucket) return res.status(503).send('Storage is still starting up.');
+    res.set('Content-Type', fileDoc.contentType || 'application/octet-stream');
+    if (req.query.download) res.set('Content-Disposition', `attachment; filename="${fileDoc.originalName}"`);
+    const downloadStream = gridBucket.openDownloadStream(fileDoc.gridId);
+    downloadStream.on('error', () => { if (!res.headersSent) res.status(404).end(); });
+    downloadStream.pipe(res);
+  } catch (e) {
+    console.error('Admin file retrieval error:', e.message);
+    res.status(500).send('Error retrieving file');
+  }
 });
 
 app.get('/admin/support/:username', requireSecretAdmin, async (req, res) => {
